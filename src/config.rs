@@ -2,6 +2,7 @@ use std::{fmt::Display, path::PathBuf};
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
+use tracing::{debug, trace};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -54,6 +55,7 @@ impl Config {
         // Determine the XDG app config directory, creating it if it doesn't exist
         let config_dir = app_dirs::app_root(app_dirs::AppDataType::UserConfig, &super::APP_INFO)
             .context("Could not determine XDG app config directory")?;
+        trace!("Config directory: {:?}", config_dir);
 
         // Check if file exists
         let config_path = config_dir.join("config.toml");
@@ -65,6 +67,7 @@ impl Config {
         }
 
         // Read and parse config file
+        debug!("Loading config from {:?}", config_path);
         let config_string = std::fs::read_to_string(&config_path)
             .with_context(|| format!("Failed to read config file: {}", config_path.display()))?;
         let config: Self = toml::from_str(&config_string).context("Failed to parse config file")?;

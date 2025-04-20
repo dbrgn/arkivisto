@@ -2,8 +2,11 @@ use std::{fmt::Display, path::Path, process::Command};
 
 use anyhow::{Context, Result, anyhow};
 use app_dirs::AppInfo;
-use clap::{Parser, ValueEnum};
+use clap::Parser;
+use tracing::{debug, level_filters::LevelFilter, trace, warn};
+use tracing_subscriber::{filter::Targets, prelude::*};
 
+mod args;
 mod config;
 
 use config::Scanner;
@@ -13,31 +16,16 @@ pub const APP_INFO: AppInfo = AppInfo {
     author: env!("CARGO_PKG_AUTHORS"),
 };
 
-#[derive(Debug, Clone, ValueEnum)]
-enum Mode {
-    Scan,
-    Process,
-    Archive,
-    Single,
-}
-
-impl Default for Mode {
-    fn default() -> Self {
-        Mode::Single
-    }
-}
-
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
-#[command(next_line_help = true)]
-struct Args {
-    /// Processing mode
-    #[arg(value_enum, default_value_t = Mode::default())]
-    mode: Mode,
-
-    /// Force processing, even if output files already exist
-    #[arg(long)]
-    force: bool,
+fn initialize_tracing(level_filter: LevelFilter) -> Result<()> {
+    let filter = Targets::new()
+        .with_default(LevelFilter::WARN)
+        .with_target(env!("CARGO_PKG_NAME"), level_filter);
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer())
+        .with(filter)
+        .try_init()
+        .context("Failed to initialize tracing")?;
+    Ok(())
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -64,14 +52,6 @@ impl ScanMode {
             ScanMode::DuplexAdf,
             ScanMode::ManualDuplexAdf,
         ]
-    }
-
-    fn to_scan_source(&self) -> &'static str {
-        match self {
-            ScanMode::SingleSidedAdf => "ADF".into(),
-            ScanMode::DuplexAdf => "ADF".into(),
-            ScanMode::ManualDuplexAdf => "ADF".into(),
-        }
     }
 }
 
@@ -146,7 +126,10 @@ fn run_scanimage(
                 .as_ref()
                 .ok_or_else(|| anyhow!("ADF duplex not available for scanner {}", scanner.id)),
             ScanMode::ManualDuplexAdf => scanner.sources.adf_single.as_ref().ok_or_else(|| {
-                anyhow!("ADF manual duplex not available for scanner {}", scanner.id)
+                anyhow!(
+                    "ADF manual duplex not available for scanner {:?}",
+                    scanner.id
+                )
             }),
         }?;
     args.push(format!("--source={}", source));
@@ -154,7 +137,19 @@ fn run_scanimage(
     // Scanner-specific additional arguments
     args.extend_from_slice(&scanner.additional_args);
 
-    Command::new("scanimage").args(&args).output()?;
+    trace!("Calling `scanimage` with arguments: {:?}", args);
+    let output = Command::new("scanimage").args(&args).output()?;
+    if !output.status.success() {
+        warn!(
+            "Scanimage failed with status {}. Stderr: {}",
+            output.status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&output.stderr),
+        );
+        return Err(anyhow!(
+            "Call to `scanimage` failed with non-successful exit status ({}). Ensure that device is running and reachable.",
+            output.status,
+        ));
+    }
     Ok(())
 }
 
@@ -162,10 +157,15 @@ fn run_scanimage(
 fn select_scanner(scanners: &[Scanner]) -> Result<Scanner> {
     // If there is only one device, return it
     if scanners.len() == 1 {
+        trace!("Only one scanner available, using it");
         return Ok(scanners[0].clone());
     }
 
     // Otherwise, rompt the user to select a scan device
+    trace!(
+        "{} scanners available, asking user for selection",
+        scanners.len()
+    );
     Ok(inquire::Select::new("Which device do you want to use?", scanners.to_vec()).prompt()?)
 }
 
@@ -188,13 +188,17 @@ fn scan_document(scanner: &Scanner) -> Result<()> {
 
 fn main() -> Result<()> {
     // Parse args
-    let args = Args::parse();
+    let args = args::Args::try_parse().context("Failed to parse command line arguments")?;
+
+    // Initialize tracing
+    initialize_tracing(args.log_level.to_filter())?;
 
     // Load config
     let config = config::Config::load().context("Failed to load config")?;
 
     // Select scan device
     let scanner = select_scanner(&config.scanners)?;
+    debug!("Selected scanner: {} ({})", scanner.id, scanner.device_name);
 
     scan_document(&scanner)?;
 
