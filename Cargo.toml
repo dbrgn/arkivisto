@@ -1,0 +1,13 @@
+[package]
+name = "arkivisto"
+version = "0.1.0"
+edition = "2024"
+authors = ["Danilo Bargen <mail@dbrgn.ch>"]
+
+[dependencies]
+anyhow = "1"
+app_dirs = { package = "app_dirs2", version = "2" }
+clap = { version = "4", features = ["derive"] }
+inquire = "0.7.5"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
