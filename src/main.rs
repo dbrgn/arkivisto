@@ -9,7 +9,7 @@ use tracing_subscriber::{filter::Targets, prelude::*};
 mod args;
 mod config;
 
-use config::Scanner;
+use config::{Scanner, ScannerSources};
 
 pub const APP_INFO: AppInfo = AppInfo {
     name: "arkivisto",
@@ -46,12 +46,18 @@ impl Display for ScanMode {
 }
 
 impl ScanMode {
-    fn options() -> Vec<Self> {
-        vec![
-            ScanMode::SingleSidedAdf,
-            ScanMode::DuplexAdf,
-            ScanMode::ManualDuplexAdf,
-        ]
+    fn options(available_sources: &ScannerSources) -> Vec<Self> {
+        let mut options = Vec::new();
+        if available_sources.adf_single.is_some() {
+            options.push(ScanMode::SingleSidedAdf);
+        }
+        if available_sources.adf_duplex.is_some() {
+            options.push(ScanMode::DuplexAdf);
+        }
+        if available_sources.adf_single.is_some() {
+            options.push(ScanMode::ManualDuplexAdf);
+        }
+        options
     }
 }
 
@@ -176,7 +182,8 @@ fn scan_document(scanner: &Scanner) -> Result<()> {
         .context("Could not determine XDG app cache directory for scans")?;
 
     // Determine scan configuration
-    let mode = inquire::Select::new("How to scan?", ScanMode::options()).prompt()?;
+    let mode =
+        inquire::Select::new("How to scan?", ScanMode::options(&scanner.sources)).prompt()?;
     let resolution = Resolution::default(); // TODO
 
     // Run `scanimage` binary
@@ -200,6 +207,7 @@ fn main() -> Result<()> {
     let scanner = select_scanner(&config.scanners)?;
     debug!("Selected scanner: {} ({})", scanner.id, scanner.device_name);
 
+    // Scan a document
     scan_document(&scanner)?;
 
     Ok(())
