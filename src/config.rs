@@ -6,7 +6,8 @@ use tracing::{debug, trace};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
-    /// Output directory for scanned files
+    /// Default output directory for scanned files
+    #[allow(dead_code)] // TODO
     pub outdir: PathBuf,
     /// Scanner configuration
     pub scanners: Vec<Scanner>,
