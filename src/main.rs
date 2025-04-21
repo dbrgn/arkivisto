@@ -63,6 +63,7 @@ impl ScanMode {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum Resolution {
     /// 300 DPI
     Normal,
@@ -221,7 +222,18 @@ fn scan_document(context: &ScanContext) -> Result<()> {
     // Determine scan configuration
     let mode =
         inquire::Select::new("How to scan?", ScanMode::options(&scanner.sources)).prompt()?;
-    let resolution = Resolution::default(); // TODO
+    let option_highdpi = "High resolution (600dpi instead of 300dpi)";
+    let options = inquire::MultiSelect::new("Scan options?", vec![option_highdpi]).prompt()?;
+    let resolution = if options.contains(&option_highdpi) {
+        Resolution::High
+    } else {
+        Resolution::Normal
+    };
+    trace!(
+        "Using resolution {:?} ({}dpi)",
+        resolution,
+        resolution.as_dpi()
+    );
 
     // Run `scanimage` binary
     if context.fake_scan {
