@@ -1,9 +1,11 @@
 # Arkivisto
 
-[![GitHub CI][github-actions-badge]][github-actions]
+![Logo](static/logo-v1-256.png)
 
 Your friendly CLI based workflow for scanning and archiving documents
 efficiently.
+
+[![GitHub CI][github-actions-badge]][github-actions]
 
 **PRE-ALPHA!**
 
