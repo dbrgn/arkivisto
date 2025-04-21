@@ -259,7 +259,7 @@ fn scan_document(context: &ScanContext) -> Result<()> {
         .context("Failed to run `scanimage` command")?;
 
     // Rename current scan directory
-    let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S").to_string();
+    let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
     let new_dir = scans_dir.join(timestamp);
     fs::rename(&current_dir, &new_dir)?;
 
