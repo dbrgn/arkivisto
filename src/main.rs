@@ -7,6 +7,7 @@ use tracing_subscriber::{filter::Targets, prelude::*};
 mod args;
 mod config;
 mod fs_utils;
+mod process;
 mod scan;
 
 pub const APP_INFO: AppInfo = AppInfo {
@@ -46,8 +47,11 @@ fn main() -> Result<()> {
         fake_scan: args.fake_scan,
     };
 
+    // TODO: Handle mode
+
     // Scan a document
-    scan::scan_document(&scan_context)?;
+    let document_dir = scan::scan_document(&scan_context)?;
+    process::process_document(&document_dir).context("Failed to post-process document")?;
 
     Ok(())
 }

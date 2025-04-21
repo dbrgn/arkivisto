@@ -1,4 +1,10 @@
-use std::{fmt::Display, fs, path::Path, process::Command, time::Duration};
+use std::{
+    fmt::Display,
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+    time::Duration,
+};
 
 use anyhow::{Context, Result, anyhow, ensure};
 use tracing::{debug, trace, warn};
@@ -234,7 +240,7 @@ fn fake_scanimage(scans_dir: &Path) -> Result<()> {
     );
     ensure!(testdata_dir.is_dir(), "`testdata` is not a directory");
 
-    std::thread::sleep(Duration::from_secs(2));
+    std::thread::sleep(Duration::from_secs(1));
 
     fs_utils::copy_dir_file_contents(testdata_dir, scans_dir)?;
 
@@ -265,8 +271,8 @@ pub struct ScanContext<'a> {
     pub fake_scan: bool,
 }
 
-/// Scan a document
-pub fn scan_document(context: &ScanContext) -> Result<()> {
+/// Scan a document, return output path
+pub fn scan_document(context: &ScanContext) -> Result<PathBuf> {
     let scanner = context.scanner;
 
     // Determine the XDG cache directory, creating it if it doesn't exist
@@ -324,5 +330,5 @@ pub fn scan_document(context: &ScanContext) -> Result<()> {
     let new_dir = scans_dir.join(timestamp);
     fs::rename(&current_dir, &new_dir)?;
 
-    Ok(())
+    Ok(new_dir)
 }

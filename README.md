@@ -18,7 +18,7 @@ Current implementation status:
 - [x] Scanning all from ADF
 - [x] Scanning multiple pages from flatbed
 - [ ] Scanning multiple pages from mixed sources
-- [ ] Postprocessing
+- [x] Postprocessing
 - [ ] Archiving
 
 ## History
