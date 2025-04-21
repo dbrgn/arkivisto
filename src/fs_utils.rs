@@ -20,6 +20,26 @@ pub fn ensure_empty_dir_exists(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Copy the contents of a directory non-recursively to another directory.
+///
+/// Only files are copied, not directories. The destination directory must exist
+/// and be a directory.
+pub fn copy_dir_file_contents(src: &Path, dst: &Path) -> Result<()> {
+    ensure!(
+        dst.exists() && dst.is_dir(),
+        "Destination path {:?} does not exist or is not a directory",
+        dst
+    );
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        if ty.is_file() {
+            fs::copy(entry.path(), dst.join(entry.file_name()))?;
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

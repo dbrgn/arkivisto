@@ -66,4 +66,9 @@ pub struct Args {
     /// Log level
     #[arg(short, long, value_enum, default_value_t = LogLevel::default())]
     pub log_level: LogLevel,
+
+    /// Dev mode: Don't actually scan, but use simulated scan TIFFs
+    #[cfg_attr(not(debug_assertions), arg(skip))]
+    #[cfg_attr(debug_assertions, arg(long))]
+    pub fake_scan: bool,
 }

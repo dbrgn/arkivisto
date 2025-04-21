@@ -1,6 +1,6 @@
 use std::{fmt::Display, fs, path::Path, process::Command, time::Duration};
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, ensure};
 use app_dirs::AppInfo;
 use clap::Parser;
 use indicatif::ProgressBar;
@@ -169,6 +169,27 @@ fn run_scanimage(
     Ok(())
 }
 
+/// Fake scanimage function for testing purposes
+///
+/// Note that this will only work, if a `testdata` folder exists in the current
+/// working directory.
+fn fake_scanimage(scans_dir: &Path) -> Result<()> {
+    debug!("Faking scan to {}", scans_dir.display());
+
+    let testdata_dir = Path::new("testdata");
+    ensure!(
+        testdata_dir.exists(),
+        "`testdata` folder not found in current working directory"
+    );
+    ensure!(testdata_dir.is_dir(), "`testdata` is not a directory");
+
+    std::thread::sleep(Duration::from_secs(1));
+
+    fs_utils::copy_dir_file_contents(testdata_dir, scans_dir)?;
+
+    Ok(())
+}
+
 /// Select a device from the list of available scanners
 fn select_scanner(scanners: &[Scanner]) -> Result<Scanner> {
     // If there is only one device, return it
@@ -186,7 +207,9 @@ fn select_scanner(scanners: &[Scanner]) -> Result<Scanner> {
 }
 
 /// Scan a document
-fn scan_document(scanner: &Scanner) -> Result<()> {
+fn scan_document(context: &ScanContext) -> Result<()> {
+    let scanner = context.scanner;
+
     // Determine the XDG cache directory, creating it if it doesn't exist
     let scans_dir = app_dirs::app_dir(app_dirs::AppDataType::UserCache, &APP_INFO, "scans")
         .context("Could not determine XDG app cache directory for scans")?;
@@ -201,8 +224,12 @@ fn scan_document(scanner: &Scanner) -> Result<()> {
     let resolution = Resolution::default(); // TODO
 
     // Run `scanimage` binary
-    run_scanimage(&current_dir, scanner, 0, None, &mode, &resolution)
-        .context("Failed to run `scanimage` command")?;
+    if context.fake_scan {
+        fake_scanimage(&current_dir).context("Failed to fake `scanimage` command")?;
+    } else {
+        run_scanimage(&current_dir, scanner, 0, None, &mode, &resolution)
+            .context("Failed to run `scanimage` command")?;
+    }
 
     // Rename current scan directory
     let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S").to_string();
@@ -210,6 +237,14 @@ fn scan_document(scanner: &Scanner) -> Result<()> {
     fs::rename(&current_dir, &new_dir)?;
 
     Ok(())
+}
+
+struct ScanContext<'a> {
+    /// The scanner to use for scanning
+    scanner: &'a Scanner,
+
+    /// Whether to fake scanning
+    fake_scan: bool,
 }
 
 fn main() -> Result<()> {
@@ -226,8 +261,14 @@ fn main() -> Result<()> {
     let scanner = select_scanner(&config.scanners)?;
     debug!("Selected scanner: {} ({})", scanner.id, scanner.device_name);
 
+    // Create scan context
+    let scan_context = ScanContext {
+        scanner: &scanner,
+        fake_scan: args.fake_scan,
+    };
+
     // Scan a document
-    scan_document(&scanner)?;
+    scan_document(&scan_context)?;
 
     Ok(())
 }
