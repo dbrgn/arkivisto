@@ -1,8 +1,9 @@
-use std::{fmt::Display, path::Path, process::Command};
+use std::{fmt::Display, path::Path, process::Command, time::Duration};
 
 use anyhow::{Context, Result, anyhow};
 use app_dirs::AppInfo;
 use clap::Parser;
+use indicatif::ProgressBar;
 use tracing::{debug, level_filters::LevelFilter, trace, warn};
 use tracing_subscriber::{filter::Targets, prelude::*};
 
@@ -106,7 +107,7 @@ fn run_scanimage(
 ) -> Result<()> {
     let mut args = Vec::new();
 
-    println!("Scanning to {}", scans_dir.display());
+    debug!("Scanning to {}", scans_dir.display());
 
     // Generic scanimage parameters
     args.push("--format=tiff".into());
@@ -144,8 +145,19 @@ fn run_scanimage(
     args.extend_from_slice(&scanner.additional_args);
 
     trace!("Calling `scanimage` with arguments: {:?}", args);
+    let spinner = ProgressBar::new_spinner().with_message("Calling `scanimage` to scan documents…");
+    spinner.enable_steady_tick(Duration::from_millis(100));
     let output = Command::new("scanimage").args(&args).output()?;
-    if !output.status.success() {
+    if output.status.success() {
+        spinner.finish_with_message(format!(
+            "Scanned documents in {:.1}s",
+            spinner.elapsed().as_secs_f32()
+        ));
+    } else {
+        spinner.abandon_with_message(format!(
+            "Failed to scan documents after {:.1}s",
+            spinner.elapsed().as_secs_f32()
+        ));
         warn!(
             "Scanimage failed with status {}. Stderr: {}",
             output.status.code().unwrap_or(-1),
