@@ -1,4 +1,4 @@
-use std::{fmt::Display, path::Path, process::Command, time::Duration};
+use std::{fmt::Display, fs, path::Path, process::Command, time::Duration};
 
 use anyhow::{Context, Result, anyhow};
 use app_dirs::AppInfo;
@@ -9,6 +9,7 @@ use tracing_subscriber::{filter::Targets, prelude::*};
 
 mod args;
 mod config;
+mod fs_utils;
 
 use config::{Scanner, ScannerSources};
 
@@ -133,10 +134,7 @@ fn run_scanimage(
                 .as_ref()
                 .ok_or_else(|| anyhow!("ADF duplex not available for scanner {}", scanner.id)),
             ScanMode::ManualDuplexAdf => scanner.sources.adf_single.as_ref().ok_or_else(|| {
-                anyhow!(
-                    "ADF manual duplex not available for scanner {:?}",
-                    scanner.id
-                )
+                anyhow!("ADF manual duplex not available for scanner {}", scanner.id)
             }),
         }?;
     args.push(format!("--source={}", source));
@@ -193,14 +191,23 @@ fn scan_document(scanner: &Scanner) -> Result<()> {
     let scans_dir = app_dirs::app_dir(app_dirs::AppDataType::UserCache, &APP_INFO, "scans")
         .context("Could not determine XDG app cache directory for scans")?;
 
+    // Ensure that "current" scan directory exists and is empty
+    let current_dir = scans_dir.join("current");
+    fs_utils::ensure_empty_dir_exists(&current_dir)?;
+
     // Determine scan configuration
     let mode =
         inquire::Select::new("How to scan?", ScanMode::options(&scanner.sources)).prompt()?;
     let resolution = Resolution::default(); // TODO
 
     // Run `scanimage` binary
-    run_scanimage(&scans_dir, scanner, 0, None, &mode, &resolution)
+    run_scanimage(&current_dir, scanner, 0, None, &mode, &resolution)
         .context("Failed to run `scanimage` command")?;
+
+    // Rename current scan directory
+    let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S").to_string();
+    let new_dir = scans_dir.join(timestamp);
+    fs::rename(&current_dir, &new_dir)?;
 
     Ok(())
 }
