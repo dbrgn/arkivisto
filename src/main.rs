@@ -101,7 +101,7 @@ impl Default for Resolution {
 ///     available pages will be scanned.
 fn run_scanimage(
     scans_dir: &Path,
-    scanner: &Scanner,
+    context: &ScanContext,
     start: usize,
     count: Option<usize>,
     mode: &ScanMode,
@@ -124,6 +124,7 @@ fn run_scanimage(
     args.push("297".into());
 
     // Specify scan source
+    let scanner = context.scanner;
     let source =
         match mode {
             ScanMode::SingleSidedAdf => scanner.sources.adf_single.as_ref().ok_or_else(|| {
@@ -144,29 +145,47 @@ fn run_scanimage(
     args.extend_from_slice(&scanner.additional_args);
 
     trace!("Calling `scanimage` with arguments: {:?}", args);
-    let spinner = ProgressBar::new_spinner().with_message("Calling `scanimage` to scan documents…");
+
+    // Show spinner
+    let spinner_message = if context.fake_scan {
+        "Faking `scanimage` to scan documents…"
+    } else {
+        "Calling `scanimage` to scan documents…"
+    };
+    let spinner = ProgressBar::new_spinner().with_message(spinner_message);
     spinner.enable_steady_tick(Duration::from_millis(100));
-    let output = Command::new("scanimage").args(&args).output()?;
-    if output.status.success() {
+
+    // Run or fake command
+    if context.fake_scan {
+        fake_scanimage(scans_dir).context("Failed to fake `scanimage` command")?;
         spinner.finish_with_message(format!(
-            "Scanned documents in {:.1}s",
+            "Simulated document scan in {:.1}s",
             spinner.elapsed().as_secs_f32()
         ));
     } else {
-        spinner.abandon_with_message(format!(
-            "Failed to scan documents after {:.1}s",
-            spinner.elapsed().as_secs_f32()
-        ));
-        warn!(
-            "Scanimage failed with status {}. Stderr: {}",
-            output.status.code().unwrap_or(-1),
-            String::from_utf8_lossy(&output.stderr),
-        );
-        return Err(anyhow!(
-            "Call to `scanimage` failed with non-successful exit status ({}). Ensure that device is running and reachable.",
-            output.status,
-        ));
+        let output = Command::new("scanimage").args(&args).output()?;
+        if output.status.success() {
+            spinner.finish_with_message(format!(
+                "Scanned documents in {:.1}s",
+                spinner.elapsed().as_secs_f32()
+            ));
+        } else {
+            spinner.abandon_with_message(format!(
+                "Failed to scan documents after {:.1}s",
+                spinner.elapsed().as_secs_f32()
+            ));
+            warn!(
+                "Scanimage failed with status {}. Stderr: {}",
+                output.status.code().unwrap_or(-1),
+                String::from_utf8_lossy(&output.stderr),
+            );
+            return Err(anyhow!(
+                "Call to `scanimage` failed with non-successful exit status ({}). Ensure that device is running and reachable.",
+                output.status,
+            ));
+        }
     }
+
     Ok(())
 }
 
@@ -236,12 +255,8 @@ fn scan_document(context: &ScanContext) -> Result<()> {
     );
 
     // Run `scanimage` binary
-    if context.fake_scan {
-        fake_scanimage(&current_dir).context("Failed to fake `scanimage` command")?;
-    } else {
-        run_scanimage(&current_dir, scanner, 0, None, &mode, &resolution)
-            .context("Failed to run `scanimage` command")?;
-    }
+    run_scanimage(&current_dir, context, 0, None, &mode, &resolution)
+        .context("Failed to run `scanimage` command")?;
 
     // Rename current scan directory
     let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S").to_string();
