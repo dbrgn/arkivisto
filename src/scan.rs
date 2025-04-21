@@ -46,9 +46,10 @@ impl ScanMode {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
 enum Resolution {
     /// 300 DPI
+    #[default]
     Normal,
     /// 600 DPI
     High,
@@ -60,12 +61,6 @@ impl Resolution {
             Resolution::Normal => 300,
             Resolution::High => 600,
         }
-    }
-}
-
-impl Default for Resolution {
-    fn default() -> Self {
-        Resolution::Normal
     }
 }
 

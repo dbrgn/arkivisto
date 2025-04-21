@@ -1,10 +1,11 @@
 use clap::{Parser, ValueEnum};
 use tracing_subscriber::filter::LevelFilter;
 
-#[derive(Debug, Clone, ValueEnum)]
+#[derive(Debug, Clone, ValueEnum, Default)]
 pub enum LogLevel {
     Trace,
     Debug,
+    #[default]
     Info,
     Warn,
     Error,
@@ -35,24 +36,13 @@ impl std::fmt::Display for LogLevel {
     }
 }
 
-impl Default for LogLevel {
-    fn default() -> Self {
-        LogLevel::Info
-    }
-}
-
-#[derive(Debug, Clone, ValueEnum)]
+#[derive(Debug, Clone, ValueEnum, Default)]
 pub enum Mode {
     Scan,
     Process,
     Archive,
+    #[default]
     Single,
-}
-
-impl Default for Mode {
-    fn default() -> Self {
-        Mode::Single
-    }
 }
 
 #[derive(Parser, Debug)]
