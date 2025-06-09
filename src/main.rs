@@ -29,7 +29,7 @@ fn initialize_tracing(level_filter: LevelFilter) -> Result<()> {
 
 fn main() -> Result<()> {
     // Parse args
-    let args = args::Args::try_parse().context("Failed to parse command line arguments")?;
+    let args = args::Args::parse();
 
     // Initialize tracing
     initialize_tracing(args.log_level.to_filter())?;
