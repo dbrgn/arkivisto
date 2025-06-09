@@ -1,11 +1,62 @@
-use std::{fs, path::Path, process::Command};
+use std::{
+    borrow::Cow,
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 use anyhow::{Context, Result, anyhow};
-use indicatif::{ProgressBar, ProgressFinish, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar, ProgressFinish, ProgressStyle};
+use regex::Regex;
 use tracing::{debug, warn};
 
+static DATE_TIME_REGEX: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+
+/// Return iterator over unprocessed document directories.
+///
+/// Parameters:
+///   scans_dir:
+///     The parent directory to search for unprocessed document directories.
+pub fn find_unprocessed_document_dirs(
+    scans_dir: &std::path::Path,
+) -> Result<impl Iterator<Item = PathBuf>> {
+    debug!("Finding unprocessed document directories in {scans_dir:?}");
+
+    let date_time_regex = DATE_TIME_REGEX
+        .get_or_init(|| Regex::new(r"^\d{8}-\d{6}$").expect("Invalid regex pattern"));
+
+    let entries = fs::read_dir(scans_dir)
+        .with_context(|| format!("Failed to read scans directory: {}", scans_dir.display()))?;
+
+    Ok(entries
+        // Filter out any IO errors and unwrap successful entries
+        .filter_map(|entry| entry.ok())
+        // Convert file system entries to paths
+        .map(|entry| entry.path())
+        // Keep only directories
+        .filter(|path| path.is_dir())
+        // Keep only directories with names matching the date-time format
+        .filter(move |path| {
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .map_or(false, |name| date_time_regex.is_match(name))
+        })
+        // Filter out directories that already have a processed file
+        // TODO: Extract all "special" filenames like "_final.pdf" into constant
+        .filter(|path| !path.join("_final.pdf").is_file()))
+}
+
 /// Process scanned files in a directory.
-pub fn process_document(directory: &Path) -> Result<()> {
+///
+/// Parameters:
+///   directory:
+///     The directory to process.
+///   multiprogress:
+///     When defined, this will be used to create progress bars.
+pub fn process_document(
+    directory: &Path,
+    multiprogress: Option<&indicatif::MultiProgress>,
+) -> Result<()> {
     debug!("Processing directory {directory:?}");
 
     // TODO: Check dependencies at setup time
@@ -40,10 +91,19 @@ pub fn process_document(directory: &Path) -> Result<()> {
     // - Combining TIFs: 1 step
     // - Converting to PDF: 1 step
     // - OCRmyPDF: 1 step
-    let progress = ProgressBar::new(tifs_step0.len() as u64 + 4)
+    let mut progress = ProgressBar::new(tifs_step0.len() as u64 + 4)
         .with_message(format!("Processing directory {directory:?}"))
-        .with_style(ProgressStyle::with_template("{bar} {msg}").expect("Invalid style"))
+        .with_prefix(
+            directory
+                .file_name()
+                .map(|os_str| os_str.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "?".to_string()),
+        )
+        .with_style(ProgressStyle::with_template("{prefix} {bar} {msg}").expect("Invalid style"))
         .with_finish(ProgressFinish::AndLeave);
+    if let Some(multiprogress) = multiprogress {
+        progress = multiprogress.add(progress);
+    }
 
     // Postprocess with ImageMagick:
     //
@@ -122,7 +182,7 @@ pub fn process_document(directory: &Path) -> Result<()> {
 
     // Run OCR and other postprocessing
     // TODO: Download docker image at setup time
-    progress.set_message("Running OCR and generate PDF/A");
+    progress.set_message("Running OCR and generating PDF/A");
     let output = Command::new("docker")
         .arg("run")
         .arg("--rm")
@@ -153,6 +213,7 @@ pub fn process_document(directory: &Path) -> Result<()> {
     }
     progress.inc(1);
 
+    progress.set_message("Processing complete");
     progress.finish();
 
     Ok(())

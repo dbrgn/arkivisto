@@ -75,12 +75,12 @@ impl Resolution {
 /// Scanned files will be stored as TIF files in the scans cache directory. The
 /// filename contains a number starting at 1000.
 fn run_scanimage(
-    scans_dir: &Path,
+    current_scan_dir: &Path,
     context: &ScanContext,
     mode: &ScanMode,
     resolution: &Resolution,
 ) -> Result<()> {
-    debug!("Scanning to {}", scans_dir.display());
+    debug!("Scanning to {}", current_scan_dir.display());
 
     // TODO: Manual duplex
 
@@ -105,7 +105,7 @@ fn run_scanimage(
     match mode {
         ScanMode::AdfSingleSided | ScanMode::AdfDuplex | ScanMode::AdfManualDuplex => {
             // Scan all available pages from ADF
-            _scanimage(scans_dir, context, source, 0, None, resolution)?;
+            _scanimage(current_scan_dir, context, source, 0, None, resolution)?;
         }
         ScanMode::Flatbed { page_count } => {
             assert!(
@@ -124,7 +124,7 @@ fn run_scanimage(
                 if !scan_next_page {
                     return Err(anyhow!("Scan aborted by user"));
                 }
-                _scanimage(scans_dir, context, source, i, Some(1), resolution)?;
+                _scanimage(current_scan_dir, context, source, i, Some(1), resolution)?;
             }
         }
     }
@@ -135,7 +135,7 @@ fn run_scanimage(
 /// Low-level function to call the `scanimage` binary.
 ///
 /// Parameters:
-///   scans_dir:
+///   current_scan_dir:
 ///     The directory where the scanned pages will be saved.
 ///   context:
 ///     The scan context.
@@ -151,7 +151,7 @@ fn run_scanimage(
 ///   resolution:
 ///     The resolution of the scanned pages.
 fn _scanimage(
-    scans_dir: &Path,
+    current_scan_dir: &Path,
     context: &ScanContext,
     source: &str,
     start: usize,
@@ -162,7 +162,10 @@ fn _scanimage(
 
     // Generic scanimage parameters
     args.push("--format=tiff".into());
-    args.push(format!("--batch={}", scans_dir.join("%d.tif").display()));
+    args.push(format!(
+        "--batch={}",
+        current_scan_dir.join("%d.tif").display()
+    ));
     args.push(format!("--batch-start={}", 1000 + start));
     if let Some(batch_count) = count {
         args.push(format!("--batch-count={}", batch_count));
@@ -194,7 +197,7 @@ fn _scanimage(
 
     // Run or fake command
     if context.fake_scan {
-        fake_scanimage(scans_dir).context("Failed to fake `scanimage` command")?;
+        fake_scanimage(current_scan_dir).context("Failed to fake `scanimage` command")?;
         spinner.finish_with_message(format!(
             "Simulated document scan in {:.1}s",
             spinner.elapsed().as_secs_f32()
@@ -230,8 +233,8 @@ fn _scanimage(
 ///
 /// Note that this will only work, if a `testdata` folder exists in the current
 /// working directory.
-fn fake_scanimage(scans_dir: &Path) -> Result<()> {
-    debug!("Faking scan to {}", scans_dir.display());
+fn fake_scanimage(current_scan_dir: &Path) -> Result<()> {
+    debug!("Faking scan to {}", current_scan_dir.display());
 
     let testdata_dir = Path::new("testdata");
     ensure!(
@@ -242,7 +245,7 @@ fn fake_scanimage(scans_dir: &Path) -> Result<()> {
 
     std::thread::sleep(Duration::from_secs(1));
 
-    fs_utils::copy_dir_file_contents(testdata_dir, scans_dir)?;
+    fs_utils::copy_dir_file_contents(testdata_dir, current_scan_dir)?;
 
     Ok(())
 }
@@ -265,23 +268,22 @@ pub fn select_scanner(scanners: &[Scanner]) -> Result<Scanner> {
 
 pub struct ScanContext<'a> {
     /// The scanner to use for scanning
-    pub scanner: &'a Scanner,
+    pub scanner: Scanner,
 
     /// Whether to fake scanning
     pub fake_scan: bool,
+
+    /// Cache directory where scans are stored
+    pub scans_dir: &'a Path,
 }
 
 /// Scan a document, return output path
 pub fn scan_document(context: &ScanContext) -> Result<PathBuf> {
-    let scanner = context.scanner;
-
-    // Determine the XDG cache directory, creating it if it doesn't exist
-    let scans_dir = app_dirs::app_dir(app_dirs::AppDataType::UserCache, &crate::APP_INFO, "scans")
-        .context("Could not determine XDG app cache directory for scans")?;
+    let scanner = &context.scanner;
 
     // Ensure that "current" scan directory exists and is empty
-    let current_dir = scans_dir.join("current");
-    fs_utils::ensure_empty_dir_exists(&current_dir)?;
+    let current_scan_dir = context.scans_dir.join("current");
+    fs_utils::ensure_empty_dir_exists(&current_scan_dir)?;
 
     // Determine scan mode
     let mut mode =
@@ -322,13 +324,13 @@ pub fn scan_document(context: &ScanContext) -> Result<PathBuf> {
     );
 
     // Run `scanimage` binary
-    run_scanimage(&current_dir, context, &mode, &resolution)
+    run_scanimage(&current_scan_dir, context, &mode, &resolution)
         .context("Failed to run `scanimage` command")?;
 
     // Rename current scan directory
     let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
-    let new_dir = scans_dir.join(timestamp);
-    fs::rename(&current_dir, &new_dir)?;
+    let new_dir = context.scans_dir.join(timestamp);
+    fs::rename(&current_scan_dir, &new_dir)?;
 
     Ok(new_dir)
 }
