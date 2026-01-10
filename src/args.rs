@@ -88,6 +88,7 @@ mod tests {
 
     mod parse_args {
         use clap::Parser;
+        use rstest::rstest;
 
         use super::*;
 
@@ -127,23 +128,17 @@ mod tests {
             assert!(matches!(args.log_level, LogLevel::Debug));
         }
 
-        #[test]
-        fn all_log_levels() {
-            for (input, expected) in [
-                ("trace", LogLevel::Trace),
-                ("debug", LogLevel::Debug),
-                ("info", LogLevel::Info),
-                ("warn", LogLevel::Warn),
-                ("error", LogLevel::Error),
-            ] {
-                let args = Args::parse_from(["arkivisto", "-l", input]);
-                assert!(
-                    matches!(args.log_level, ref level if std::mem::discriminant(level) == std::mem::discriminant(&expected)),
-                    "Expected {:?} for input '{}'",
-                    expected,
-                    input
-                );
-            }
+        #[rstest]
+        #[case("trace", LogLevel::Trace)]
+        #[case("debug", LogLevel::Debug)]
+        #[case("info", LogLevel::Info)]
+        #[case("warn", LogLevel::Warn)]
+        #[case("error", LogLevel::Error)]
+        fn log_level(#[case] input: &str, #[case] expected: LogLevel) {
+            let args = Args::parse_from(["arkivisto", "-l", input]);
+            assert!(
+                matches!(args.log_level, ref level if std::mem::discriminant(level) == std::mem::discriminant(&expected))
+            );
         }
     }
 
