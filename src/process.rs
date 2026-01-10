@@ -82,9 +82,7 @@ pub fn prepare_dependencies() -> Result<()> {
 /// Parameters:
 ///   scans_dir:
 ///     The parent directory to search for unprocessed document directories.
-pub fn find_unprocessed_document_dirs(
-    scans_dir: &std::path::Path,
-) -> Result<impl Iterator<Item = PathBuf>> {
+pub fn find_unprocessed_document_dirs(scans_dir: &std::path::Path) -> Result<Vec<PathBuf>> {
     debug!("Finding unprocessed document directories in {scans_dir:?}");
 
     let date_time_regex = DATE_TIME_REGEX
@@ -93,7 +91,7 @@ pub fn find_unprocessed_document_dirs(
     let entries = fs::read_dir(scans_dir)
         .with_context(|| format!("Failed to read scans directory: {}", scans_dir.display()))?;
 
-    Ok(entries
+    let mut dirs: Vec<_> = entries
         // Filter out any IO errors and unwrap successful entries
         .filter_map(|entry| entry.ok())
         // Convert file system entries to paths
@@ -106,8 +104,15 @@ pub fn find_unprocessed_document_dirs(
                 .and_then(|n| n.to_str())
                 .is_some_and(|name| date_time_regex.is_match(name))
         })
-        // Filter out directories that already have a processed file
-        .filter(|path| !path.join(filenames::PROCESSED_PDF).is_file()))
+        // Filter out directories that already have processed files
+        .filter(|path| {
+            !path.join(filenames::PROCESSED_PDF).is_file()
+                && !path.join(filenames::PROCESSED_TXT).is_file()
+        })
+        .collect();
+
+    dirs.sort();
+    Ok(dirs)
 }
 
 /// Process scanned files in a directory.
