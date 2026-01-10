@@ -10,7 +10,19 @@ use regex::Regex;
 use tracing::{debug, warn};
 
 static DATE_TIME_REGEX: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+
+/// OCRmyPDF Docker image version
 static OCRMYPDF_VERSION: &str = "v16.13.0";
+
+/// Special filenames used during document processing
+mod filenames {
+    /// Intermediate combined TIFF file
+    pub const COMBINED_TIF: &str = "_combined.tif";
+    /// Intermediate combined PDF file (before OCR)
+    pub const COMBINED_PDF: &str = "_combined.pdf";
+    /// Final output PDF after OCR processing
+    pub const FINAL_PDF: &str = "_final.pdf";
+}
 
 /// Return iterator over unprocessed document directories.
 ///
@@ -42,8 +54,7 @@ pub fn find_unprocessed_document_dirs(
                 .is_some_and(|name| date_time_regex.is_match(name))
         })
         // Filter out directories that already have a processed file
-        // TODO: Extract all "special" filenames like "_final.pdf" into constant
-        .filter(|path| !path.join("_final.pdf").is_file()))
+        .filter(|path| !path.join(filenames::FINAL_PDF).is_file()))
 }
 
 /// Process scanned files in a directory.
@@ -145,7 +156,7 @@ pub fn process_document(
 
     // Combine TIFs
     progress.set_message("Combining TIFs");
-    let tif_combined = directory.join("_combined.tif");
+    let tif_combined = directory.join(filenames::COMBINED_TIF);
     let output = Command::new("tiffcp")
         .arg("-c")
         .arg("lzw")
@@ -164,7 +175,7 @@ pub fn process_document(
 
     // Convert TIF to PDF
     progress.set_message("Converting to PDF");
-    let pdf_out = directory.join("_combined.pdf");
+    let pdf_out = directory.join(filenames::COMBINED_PDF);
     let output = Command::new("magick")
         .arg(tif_combined.as_os_str())
         .arg("-compress")
@@ -202,7 +213,7 @@ pub fn process_document(
                     .context("Failed to get output PDF file name")?,
             ),
         )
-        .arg(Path::new("/document/_final.pdf"))
+        .arg(Path::new("/document/").join(filenames::FINAL_PDF))
         .output()?;
     if !output.status.success() {
         warn!(
