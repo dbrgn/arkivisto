@@ -62,7 +62,7 @@ pub fn process_document(
     // TODO: Check dependencies at setup time
 
     // Collect all unprocessed TIFF files
-    let tifs_step0: Vec<String> = fs::read_dir(directory)
+    let mut tifs_step0: Vec<String> = fs::read_dir(directory)
         .expect("Failed to read directory")
         .filter_map(|entry| {
             let entry = entry.expect("Failed to read directory entry");
@@ -74,6 +74,7 @@ pub fn process_document(
             }
         })
         .collect();
+    tifs_step0.sort();
 
     // If no TIFF files are found, delete directory and return error
     if tifs_step0.is_empty() {
