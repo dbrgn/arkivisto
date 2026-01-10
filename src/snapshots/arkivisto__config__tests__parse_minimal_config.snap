@@ -7,10 +7,9 @@ scanners:
   - id: brother
     device_name: "brother3:net1;dev0"
     additional_args: []
-    sources:
-      adf_single: Automatic Document Feeder(centrally aligned)
-      adf_duplex: ~
-      flatbed: FlatBed
+    source_adf_single: Automatic Document Feeder(centrally aligned)
+    source_adf_duplex: ~
+    source_flatbed: FlatBed
 authors: []
 tools:
   ocrmypdf:

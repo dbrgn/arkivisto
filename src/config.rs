@@ -121,36 +121,53 @@ pub struct Scanner {
     pub id: String,
 
     /// Name of the scanner as indicated by SANE (e.g. "airscan:e1:HP ScanJet Flow N7000 snw1")
+    ///
+    /// Use `scanimage -L` to list all available scanners.
     pub device_name: String,
 
     /// Additional arguments passed to scanimage
     #[serde(default)]
     pub additional_args: Vec<String>,
 
-    /// Configure scan sources
-    pub sources: ScannerSources,
+    /// ADF single-sided source (if available)
+    ///
+    /// Use `scanimage --help -d <device> 2>&1 | grep source` to view all available sources.
+    #[serde(default)]
+    pub source_adf_single: Option<String>,
+
+    /// ADF duplex source (if available)
+    ///
+    /// Use `scanimage --help -d <device> 2>&1 | grep source` to view all available sources.
+    #[serde(default)]
+    pub source_adf_duplex: Option<String>,
+
+    /// Flatbed source (if available)
+    ///
+    /// Use `scanimage --help -d <device> 2>&1 | grep source` to view all available sources.
+    #[serde(default)]
+    pub source_flatbed: Option<String>,
+}
+
+impl Scanner {
+    /// Validate that at least one scan source is configured
+    fn validate(&self) -> Result<()> {
+        if self.source_adf_single.is_none()
+            && self.source_adf_duplex.is_none()
+            && self.source_flatbed.is_none()
+        {
+            anyhow::bail!(
+                "Scanner '{}' must have at least one scan source configured (source_adf_single, source_adf_duplex, or source_flatbed)",
+                self.id
+            );
+        }
+        Ok(())
+    }
 }
 
 impl Display for Scanner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} ({})", self.id, self.device_name)
     }
-}
-
-/// Configure the possible sources of a scanner
-///
-/// For example, one scanner might call the ADF scan source "ADF", while another
-/// might call it "Automatic Document Feeder(centrally aligned)".
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ScannerSources {
-    /// ADF single-sided source
-    pub adf_single: Option<String>,
-
-    /// ADF duplex source
-    pub adf_duplex: Option<String>,
-
-    /// Flatbed source
-    pub flatbed: Option<String>,
 }
 
 impl Config {
@@ -179,6 +196,13 @@ impl Config {
         let config_string = fs::read_to_string(&config_path)
             .with_context(|| format!("Failed to read config file: {}", config_path.display()))?;
         let config: Self = toml::from_str(&config_string).context("Failed to parse config file")?;
+
+        // Validate scanners
+        for scanner in &config.scanners {
+            scanner
+                .validate()
+                .context("Invalid scanner configuration")?;
+        }
 
         Ok(config)
     }
@@ -225,12 +249,47 @@ mod tests {
             [[scanners]]
             id = "brother"
             device_name = "brother3:net1;dev0"
-            sources.adf_single = "Automatic Document Feeder(centrally aligned)"
-            sources.flatbed = "FlatBed"
+            source_adf_single = "Automatic Document Feeder(centrally aligned)"
+            source_flatbed = "FlatBed"
             "#,
         )
         .context("Failed to parse config file")
         .unwrap();
         insta::assert_yaml_snapshot!(config);
+    }
+
+    #[test]
+    fn scanner_without_sources_fails_validation() {
+        let scanner = Scanner {
+            id: "test".to_string(),
+            device_name: "test:device".to_string(),
+            additional_args: vec![],
+            source_adf_single: None,
+            source_adf_duplex: None,
+            source_flatbed: None,
+        };
+
+        let result = scanner.validate();
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("at least one scan source")
+        );
+    }
+
+    #[test]
+    fn scanner_with_one_source_passes_validation() {
+        let scanner = Scanner {
+            id: "test".to_string(),
+            device_name: "test:device".to_string(),
+            additional_args: vec![],
+            source_adf_single: Some("ADF".to_string()),
+            source_adf_duplex: None,
+            source_flatbed: None,
+        };
+
+        assert!(scanner.validate().is_ok());
     }
 }

@@ -11,7 +11,7 @@ use tracing::{debug, trace, warn};
 
 use crate::{
     common::{self, CheckDependencyResult},
-    config::{Scanner, ScannerSources},
+    config::Scanner,
     fs_utils,
 };
 
@@ -49,18 +49,18 @@ impl Display for ScanMode {
 }
 
 impl ScanMode {
-    fn options(available_sources: &ScannerSources) -> Vec<Self> {
+    fn options(scanner: &Scanner) -> Vec<Self> {
         let mut options = Vec::new();
-        if available_sources.adf_single.is_some() {
+        if scanner.source_adf_single.is_some() {
             options.push(ScanMode::AdfSingleSided);
         }
-        if available_sources.adf_duplex.is_some() {
+        if scanner.source_adf_duplex.is_some() {
             options.push(ScanMode::AdfDuplex);
         }
-        if available_sources.adf_single.is_some() {
+        if scanner.source_adf_single.is_some() {
             options.push(ScanMode::AdfManualDuplex);
         }
-        if available_sources.flatbed.is_some() {
+        if scanner.source_flatbed.is_some() {
             options.push(ScanMode::Flatbed { page_count: 0 });
         }
         options
@@ -102,7 +102,7 @@ fn run_scanimage(
     // Macro to reduce repetition in source checking
     macro_rules! get_source {
         ($field:ident, $desc:expr) => {
-            context.scanner.sources.$field.as_ref().ok_or_else(|| {
+            context.scanner.$field.as_ref().ok_or_else(|| {
                 anyhow!("{} not available for scanner {}", $desc, context.scanner.id)
             })
         };
@@ -110,10 +110,10 @@ fn run_scanimage(
 
     // Determine source string
     let source = match mode {
-        ScanMode::AdfSingleSided => get_source!(adf_single, "ADF single-sided"),
-        ScanMode::AdfDuplex => get_source!(adf_duplex, "ADF duplex"),
-        ScanMode::AdfManualDuplex => get_source!(adf_single, "ADF manual duplex"),
-        ScanMode::Flatbed { .. } => get_source!(flatbed, "Flatbed"),
+        ScanMode::AdfSingleSided => get_source!(source_adf_single, "ADF single-sided"),
+        ScanMode::AdfDuplex => get_source!(source_adf_duplex, "ADF duplex"),
+        ScanMode::AdfManualDuplex => get_source!(source_adf_single, "ADF manual duplex"),
+        ScanMode::Flatbed { .. } => get_source!(source_flatbed, "Flatbed"),
     }?;
 
     // Call scanimage
@@ -301,8 +301,8 @@ pub fn scan_document(context: &ScanContext) -> Result<PathBuf> {
     fs_utils::ensure_empty_dir_exists(&current_scan_dir)?;
 
     // Determine scan mode
-    let mut mode =
-        inquire::Select::new("How to scan?", ScanMode::options(&scanner.sources)).prompt()?;
+    let scan_mode_options = ScanMode::options(scanner);
+    let mut mode = inquire::Select::new("How to scan?", scan_mode_options).prompt()?;
 
     // Determine number of pages to scan
     if matches!(mode, ScanMode::Flatbed { .. }) {
