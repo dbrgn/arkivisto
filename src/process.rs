@@ -10,6 +10,7 @@ use regex::Regex;
 use tracing::{debug, warn};
 
 static DATE_TIME_REGEX: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+static OCRMYPDF_VERSION: &str = "v16.13.0";
 
 /// Return iterator over unprocessed document directories.
 ///
@@ -193,7 +194,7 @@ pub fn process_document(
                 .to_str()
                 .context("Failed to convert directory path to string")?
         ))
-        .arg("docker.io/jbarlow83/ocrmypdf:v16.10.0") // TODO: Extract version
+        .arg(format!("docker.io/jbarlow83/ocrmypdf:{OCRMYPDF_VERSION}"))
         .arg(
             Path::new("/document/").join(
                 pdf_out
