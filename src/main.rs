@@ -51,7 +51,7 @@ fn main() -> Result<()> {
         debug!("Selected scanner: {} ({})", scanner.id, scanner.device_name);
 
         Ok(scan::ScanContext {
-            scanner: scanner,
+            scanner,
             scans_dir: &scans_dir,
             fake_scan: args.fake_scan,
         })

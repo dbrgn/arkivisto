@@ -1,12 +1,11 @@
 use std::{
-    borrow::Cow,
     fs,
     path::{Path, PathBuf},
     process::Command,
 };
 
 use anyhow::{Context, Result, anyhow};
-use indicatif::{MultiProgress, ProgressBar, ProgressFinish, ProgressStyle};
+use indicatif::{ProgressBar, ProgressFinish, ProgressStyle};
 use regex::Regex;
 use tracing::{debug, warn};
 
@@ -39,7 +38,7 @@ pub fn find_unprocessed_document_dirs(
         .filter(move |path| {
             path.file_name()
                 .and_then(|n| n.to_str())
-                .map_or(false, |name| date_time_regex.is_match(name))
+                .is_some_and(|name| date_time_regex.is_match(name))
         })
         // Filter out directories that already have a processed file
         // TODO: Extract all "special" filenames like "_final.pdf" into constant
