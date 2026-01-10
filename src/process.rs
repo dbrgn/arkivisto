@@ -6,6 +6,7 @@ use std::{
 
 use anyhow::{Context, Result, anyhow};
 use indicatif::{ProgressBar, ProgressFinish, ProgressStyle};
+use nix::unistd::{Gid, Uid};
 use regex::Regex;
 use tracing::{debug, trace, warn};
 
@@ -15,6 +16,14 @@ static DATE_TIME_REGEX: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
 
 /// OCRmyPDF Docker image and version
 static OCRMYPDF_IMAGE: &str = "docker.io/jbarlow83/ocrmypdf:v16.13.0";
+
+/// Get the current user's UID and GID for use with Docker --user flag.
+///
+/// This ensures that files created by Docker containers are owned by the current user
+/// rather than root.
+fn get_current_uid_gid() -> (u32, u32) {
+    (Uid::current().as_raw(), Gid::current().as_raw())
+}
 
 /// Commands used to process files
 mod commands {
@@ -264,9 +273,15 @@ pub fn process_document(
 
     // Run OCR and other postprocessing
     progress.set_message("Running OCR and generating PDF/A");
+
+    // Get current UID/GID to ensure output files are owned by the current user
+    let (uid, gid) = get_current_uid_gid();
+
     let output = Command::new(commands::DOCKER.bin)
         .arg("run")
         .arg("--rm")
+        .arg("--user")
+        .arg(format!("{}:{}", uid, gid))
         .arg("-v")
         .arg(format!(
             "{}:/document",
