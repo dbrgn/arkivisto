@@ -335,7 +335,7 @@ fn create_author(config: &mut Config) -> Result<Author> {
     };
 
     config
-        .append_author(author.clone())
+        .append_author(author.clone(), None)
         .context("Failed to append new author to config")?;
     println!("Author successfully added to config file!");
 
@@ -496,7 +496,7 @@ fn create_document_type(config: &mut Config, author: &Author) -> Result<Document
 
     // Add to config
     config
-        .append_document_type(&author.name, document_type.clone())
+        .append_document_type(&author.name, document_type.clone(), None)
         .context("Failed to append new document type to config")?;
     println!("Document type successfully added to config file!");
 

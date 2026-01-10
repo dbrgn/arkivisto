@@ -57,7 +57,7 @@ fn default_ocrmypdf_language() -> String {
 ///
 /// Authors are used during archiving to categorize documents and determine the output
 /// directory structure.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Author {
     /// Display name of the author
     pub name: String,
@@ -87,7 +87,7 @@ impl Display for Author {
 ///
 /// Document types allow for finer-grained organization and metadata extraction
 /// based on the content of the document.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct DocumentType {
     /// Display name of the document type
     pub name: String,
@@ -197,9 +197,8 @@ impl Config {
         Ok(config_dir.join("config.toml"))
     }
 
-    /// Load config from the default config file location
-    pub fn load() -> Result<Self> {
-        let config_path = Self::config_path()?;
+    /// Load config from a specific path
+    pub fn load_from_path(config_path: &Path) -> Result<Self> {
         trace!("Config path: {:?}", config_path);
 
         // Check if file exists
@@ -212,7 +211,7 @@ impl Config {
 
         // Read and parse config file
         debug!("Loading config from {:?}", config_path);
-        let config_string = fs::read_to_string(&config_path)
+        let config_string = fs::read_to_string(config_path)
             .with_context(|| format!("Failed to read config file: {}", config_path.display()))?;
         let config: Self = toml::from_str(&config_string).context("Failed to parse config file")?;
 
@@ -224,6 +223,12 @@ impl Config {
         }
 
         Ok(config)
+    }
+
+    /// Load config from the default config file location
+    pub fn load() -> Result<Self> {
+        let config_path = Self::config_path()?;
+        Self::load_from_path(&config_path)
     }
 
     /// Create backup if file exists
@@ -244,8 +249,18 @@ impl Config {
     /// Append a new author to the config file, preserving formatting
     ///
     /// This method updates both the in-memory config and the config file on disk.
-    pub fn append_author(&mut self, author: Author) -> Result<()> {
-        let config_path = Self::config_path()?;
+    ///
+    /// Parameters:
+    ///   author:
+    ///     The author to append.
+    ///   config_path:
+    ///     If set, this config path will be used. Otherwise, the default config path will be used.
+    pub fn append_author(&mut self, author: Author, config_path: Option<PathBuf>) -> Result<()> {
+        let config_path = if let Some(path) = config_path {
+            path
+        } else {
+            Self::config_path()?
+        };
 
         // Create backup if file exists
         Self::create_backup(&config_path)?;
@@ -287,12 +302,25 @@ impl Config {
     /// Append a new document type to an author in the config file, preserving formatting
     ///
     /// This method updates both the in-memory config and the config file on disk.
+    ///
+    /// Parameters:
+    ///   author_name:
+    ///     Document type will be appended to the author with this name.
+    ///   document_type:
+    ///     The document type to append.
+    ///   config_path:
+    ///     If set, this config path will be used. Otherwise, the default config path will be used.
     pub fn append_document_type(
         &mut self,
         author_name: &str,
         document_type: DocumentType,
+        config_path: Option<PathBuf>,
     ) -> Result<()> {
-        let config_path = Self::config_path()?;
+        let config_path = if let Some(path) = config_path {
+            path
+        } else {
+            Self::config_path()?
+        };
 
         // Create backup if file exists
         Self::create_backup(&config_path)?;
@@ -359,6 +387,8 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
+    use tempfile::TempDir;
+
     use super::*;
 
     #[test]
@@ -376,42 +406,89 @@ mod tests {
         )
         .context("Failed to parse config file")
         .unwrap();
+
         insta::assert_yaml_snapshot!(config);
     }
 
     #[test]
-    fn scanner_without_sources_fails_validation() {
-        let scanner = Scanner {
-            id: "test".to_string(),
-            device_name: "test:device".to_string(),
-            additional_args: vec![],
-            source_adf_single: None,
-            source_adf_duplex: None,
-            source_flatbed: None,
-        };
+    fn load_config() {
+        // Write a minimal valid config
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+        let config_content = r#"
+outdir = "/tmp/archive"
 
-        let result = scanner.validate();
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("at least one scan source")
-        );
+[[scanners]]
+id = "test_scanner"
+device_name = "test:scanner:device"
+source_flatbed = "Flatbed"
+source_adf_single = "ADF"
+"#;
+        fs::write(&config_path, config_content).unwrap();
+
+        // Load the config from the temporary path
+        let config = Config::load_from_path(&config_path).unwrap();
+
+        // Verify the config was loaded correctly
+        insta::assert_yaml_snapshot!(config);
     }
 
-    #[test]
-    fn scanner_with_one_source_passes_validation() {
-        let scanner = Scanner {
-            id: "test".to_string(),
-            device_name: "test:device".to_string(),
-            additional_args: vec![],
-            source_adf_single: Some("ADF".to_string()),
-            source_adf_duplex: None,
-            source_flatbed: None,
-        };
+    mod validation {
+        use super::*;
 
-        assert!(scanner.validate().is_ok());
+        #[test]
+        fn scanner_without_sources_fails_validation() {
+            let scanner = Scanner {
+                id: "test".to_string(),
+                device_name: "test:device".to_string(),
+                additional_args: vec![],
+                source_adf_single: None,
+                source_adf_duplex: None,
+                source_flatbed: None,
+            };
+
+            let result = scanner.validate();
+            assert!(result.is_err());
+            assert!(
+                result
+                    .unwrap_err()
+                    .to_string()
+                    .contains("at least one scan source")
+            );
+        }
+
+        #[test]
+        fn scanner_with_one_source_passes_validation() {
+            let scanner = Scanner {
+                id: "test".to_string(),
+                device_name: "test:device".to_string(),
+                additional_args: vec![],
+                source_adf_single: Some("ADF".to_string()),
+                source_adf_duplex: None,
+                source_flatbed: None,
+            };
+
+            assert!(scanner.validate().is_ok());
+        }
+
+        #[test]
+        fn scanner_without_sources_fails_loading() {
+            // Write a minimal config without source
+            let temp_dir = TempDir::new().unwrap();
+            let config_path = temp_dir.path().join("config.toml");
+            let config_content = r#"
+outdir = "/tmp/archive"
+
+[[scanners]]
+id = "test_scanner"
+device_name = "test:scanner:device"
+"#;
+            fs::write(&config_path, config_content).unwrap();
+
+            // Load the config from the temporary path
+            let err = Config::load_from_path(&config_path).unwrap_err();
+            insta::assert_debug_snapshot!(err);
+        }
     }
 
     mod struct_to_toml_table {
@@ -451,6 +528,109 @@ mod tests {
             assert!(table.contains_key("name"));
             assert!(table.contains_key("directory"));
             assert_eq!(table.get("name").unwrap().as_str().unwrap(), "Invoice");
+        }
+    }
+
+    mod modification {
+        use super::*;
+
+        #[test]
+        fn append_author() {
+            // Write a minimal valid config
+            let temp_dir = TempDir::new().unwrap();
+            let config_path = temp_dir.path().join("config.toml");
+            let config_content = r#"
+outdir = "/tmp/archive"
+
+# First scanner
+[[scanners]]
+id = "test_scanner"
+device_name = "test:scanner:device"
+source_flatbed =  "Flatbed" # Double space
+"#;
+            fs::write(&config_path, config_content).unwrap();
+
+            // Load and modify config
+            let mut config = Config::load_from_path(&config_path).unwrap();
+            let author = Author {
+                name: "Author".into(),
+                include_keywords: vec![],
+                exclude_keywords: vec![],
+                directory: "/tmp/somedir".into(),
+                pdf_keywords: vec![],
+                document_types: vec![],
+            };
+            config
+                .append_author(author.clone(), Some(config_path.clone()))
+                .unwrap();
+
+            // Ensure in-memory representation was updated
+            assert_eq!(config.authors.len(), 1);
+            assert_eq!(&config.authors[0], &author);
+
+            // Verify the config was modified correctly
+            insta::assert_yaml_snapshot!(config);
+
+            // Verify formatting wasn't changed
+            let config_string = fs::read_to_string(config_path).unwrap();
+            assert!(config_string.contains("# First scanner"));
+            assert!(config_string.contains("source_flatbed =  \"Flatbed\" # Double space"));
+        }
+
+        #[test]
+        fn append_document_type() {
+            // Write a minimal valid config
+            let temp_dir = TempDir::new().unwrap();
+            let config_path = temp_dir.path().join("config.toml");
+            let config_content = r#"
+outdir = "/tmp/archive"
+
+[[scanners]]
+id = "test_scanner"
+device_name = "test:scanner:device"
+source_flatbed =  "Flatbed" # Scanner source
+
+[[authors]]
+# A sample author
+name = "Musterfirma"
+directory =  "musterfirma" # Author directory
+"#;
+            fs::write(&config_path, config_content).unwrap();
+
+            // Load and modify config
+            let mut config = Config::load_from_path(&config_path).unwrap();
+            let document_type = DocumentType {
+                name: "Invoice".into(),
+                include_keywords: vec![],
+                exclude_keywords: vec![],
+                directory: "".into(),
+                pdf_title_regex: None,
+                pdf_title_pattern: None,
+                pdf_date_regex: None,
+                pdf_keywords: vec![],
+            };
+            let author_name = config.authors[0].name.clone();
+            config
+                .append_document_type(
+                    &author_name,
+                    document_type.clone(),
+                    Some(config_path.clone()),
+                )
+                .unwrap();
+
+            // Ensure in-memory representation was updated
+            assert_eq!(config.authors[0].document_types.len(), 1);
+            assert_eq!(&config.authors[0].document_types[0], &document_type);
+
+            // Verify the config was modified correctly
+            insta::assert_yaml_snapshot!("append_document_type_parsed", config);
+
+            // Verify formatting wasn't changed
+            let config_string = fs::read_to_string(config_path).unwrap();
+            insta::assert_snapshot!("append_document_type_raw", config_string);
+            assert!(config_string.contains("source_flatbed =  \"Flatbed\" # Scanner source"));
+            assert!(config_string.contains("# A sample author"));
+            assert!(config_string.contains("directory =  \"musterfirma\" # Author directory"));
         }
     }
 }

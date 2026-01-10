@@ -1,0 +1,22 @@
+---
+source: src/config.rs
+expression: config
+---
+outdir: /tmp/archive
+scanners:
+  - id: test_scanner
+    device_name: "test:scanner:device"
+    additional_args: []
+    source_adf_single: ~
+    source_adf_duplex: ~
+    source_flatbed: Flatbed
+authors:
+  - name: Author
+    include_keywords: []
+    exclude_keywords: []
+    directory: /tmp/somedir
+    pdf_keywords: []
+    document_types: []
+tools:
+  ocrmypdf:
+    language: eng

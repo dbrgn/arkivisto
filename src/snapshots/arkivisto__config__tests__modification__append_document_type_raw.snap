@@ -1,0 +1,23 @@
+---
+source: src/config.rs
+expression: config_string
+---
+
+outdir = "/tmp/archive"
+
+[[scanners]]
+id = "test_scanner"
+device_name = "test:scanner:device"
+source_flatbed =  "Flatbed" # Scanner source
+
+[[authors]]
+# A sample author
+name = "Musterfirma"
+directory =  "musterfirma" # Author directory
+
+[[authors.document_types]]
+name = "Invoice"
+include_keywords = []
+exclude_keywords = []
+directory = ""
+pdf_keywords = []

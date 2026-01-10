@@ -1,0 +1,8 @@
+---
+source: src/config.rs
+expression: err
+---
+Error {
+    context: "Invalid scanner configuration",
+    source: "Scanner 'test_scanner' must have at least one scan source configured (source_adf_single, source_adf_duplex, or source_flatbed)",
+}
