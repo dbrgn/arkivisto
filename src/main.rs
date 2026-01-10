@@ -78,8 +78,12 @@ fn main() -> Result<()> {
         Mode::Process => {
             // Process any unprocessed documents
             // TODO: Do things in parallel. The `multiprogress` struct has support for this. Maybe use rayon?
-            let document_dirs =
-                process::find_unprocessed_document_dirs(&scans_dir)?.collect::<Vec<_>>();
+            let document_dirs = {
+                let mut dirs =
+                    process::find_unprocessed_document_dirs(&scans_dir)?.collect::<Vec<_>>();
+                dirs.sort();
+                dirs
+            };
             if document_dirs.is_empty() {
                 println!("No unprocessed documents found.");
             } else {
