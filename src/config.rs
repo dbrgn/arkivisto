@@ -211,3 +211,26 @@ impl Config {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_minimal_config() {
+        let config: Config = toml::from_str(
+            r#"
+            outdir = "/tmp/foo"
+
+            [[scanners]]
+            id = "brother"
+            device_name = "brother3:net1;dev0"
+            sources.adf_single = "Automatic Document Feeder(centrally aligned)"
+            sources.flatbed = "FlatBed"
+            "#,
+        )
+        .context("Failed to parse config file")
+        .unwrap();
+        insta::assert_yaml_snapshot!(config);
+    }
+}

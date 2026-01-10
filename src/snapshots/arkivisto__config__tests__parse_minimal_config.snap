@@ -1,0 +1,17 @@
+---
+source: src/config.rs
+expression: config
+---
+outdir: /tmp/foo
+scanners:
+  - id: brother
+    device_name: "brother3:net1;dev0"
+    additional_args: []
+    sources:
+      adf_single: Automatic Document Feeder(centrally aligned)
+      adf_duplex: ~
+      flatbed: FlatBed
+authors: []
+tools:
+  ocrmypdf:
+    language: eng
