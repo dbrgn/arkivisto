@@ -202,7 +202,7 @@ impl Config {
         let config_string = fs::read_to_string(config_path)
             .with_context(|| format!("Failed to read config file: {}", config_path.display()))?;
         let config: Self =
-            serde_yml::from_str(&config_string).context("Failed to parse config file")?;
+            serde_saphyr::from_str(&config_string).context("Failed to parse config file")?;
 
         // Validate scanners
         for scanner in &config.scanners {
@@ -254,7 +254,7 @@ impl Config {
         Self::create_backup(&config_path)?;
 
         // Serialize to YAML
-        let yaml = serde_yml::to_string(self).context("Failed to serialize config to YAML")?;
+        let yaml = serde_saphyr::to_string(self).context("Failed to serialize config to YAML")?;
 
         // Write to file
         fs::write(&config_path, yaml)
@@ -273,7 +273,7 @@ mod tests {
 
     #[test]
     fn parse_minimal_config() {
-        let config: Config = serde_yml::from_str(
+        let config: Config = serde_saphyr::from_str(
             r#"
 outdir: /tmp/foo
 
