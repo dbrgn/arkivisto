@@ -1,7 +1,12 @@
-use std::{fmt::Display, fs, path::PathBuf};
+use std::{
+    fmt::Display,
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use toml_edit::DocumentMut;
 use tracing::{debug, trace};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -170,6 +175,20 @@ impl Display for Scanner {
     }
 }
 
+/// Helper function to convert a serializable struct to a toml_edit Table
+fn struct_to_toml_table<T: Serialize>(value: &T) -> Result<toml_edit::Table> {
+    // Serialize the struct to a TOML string
+    let toml_string = toml::to_string(value).context("Failed to serialize struct to TOML")?;
+
+    // Parse it back with toml_edit to get a document
+    let doc = toml_string
+        .parse::<DocumentMut>()
+        .context("Failed to parse serialized TOML")?;
+
+    // The serialized struct is the root table
+    Ok(doc.as_table().clone())
+}
+
 impl Config {
     /// Get the path to the config file
     fn config_path() -> Result<PathBuf> {
@@ -207,16 +226,11 @@ impl Config {
         Ok(config)
     }
 
-    /// Save config to the default config file location
-    ///
-    /// Creates a backup of the existing config file before overwriting.
-    pub fn save(&self) -> Result<()> {
-        let config_path = Self::config_path()?;
-
-        // Create backup if file exists
+    /// Create backup if file exists
+    fn create_backup(config_path: &Path) -> Result<()> {
         if config_path.exists() {
             let backup_path = config_path.with_extension("toml~");
-            fs::copy(&config_path, &backup_path).with_context(|| {
+            fs::copy(config_path, &backup_path).with_context(|| {
                 format!(
                     "Failed to create backup of config file: {}",
                     config_path.display()
@@ -224,14 +238,121 @@ impl Config {
             })?;
             debug!("Created config backup at {:?}", backup_path);
         }
+        Ok(())
+    }
 
-        // Serialize and write config
-        let config_string =
-            toml::to_string_pretty(self).context("Failed to serialize config to TOML")?;
-        fs::write(&config_path, config_string)
+    /// Append a new author to the config file, preserving formatting
+    ///
+    /// This method updates both the in-memory config and the config file on disk.
+    pub fn append_author(&mut self, author: Author) -> Result<()> {
+        let config_path = Self::config_path()?;
+
+        // Create backup if file exists
+        Self::create_backup(&config_path)?;
+
+        // Read and parse config file with toml_edit
+        let config_string = fs::read_to_string(&config_path)
+            .with_context(|| format!("Failed to read config file: {}", config_path.display()))?;
+        let mut doc = config_string
+            .parse::<DocumentMut>()
+            .context("Failed to parse config file as TOML")?;
+
+        // Convert author to toml_edit table
+        let author_table =
+            struct_to_toml_table(&author).context("Failed to convert author to TOML")?;
+
+        // Get or create authors array
+        if !doc.contains_key("authors") {
+            doc["authors"] = toml_edit::Item::ArrayOfTables(toml_edit::ArrayOfTables::new());
+        }
+
+        // Append to authors array
+        let authors = doc["authors"]
+            .as_array_of_tables_mut()
+            .context("'authors' must be an array of tables")?;
+
+        authors.push(author_table);
+
+        // Write back to file
+        fs::write(&config_path, doc.to_string())
             .with_context(|| format!("Failed to write config file: {}", config_path.display()))?;
 
-        debug!("Saved config to {:?}", config_path);
+        // Update in-memory config
+        self.authors.push(author);
+
+        debug!("Appended author to config at {:?}", config_path);
+        Ok(())
+    }
+
+    /// Append a new document type to an author in the config file, preserving formatting
+    ///
+    /// This method updates both the in-memory config and the config file on disk.
+    pub fn append_document_type(
+        &mut self,
+        author_name: &str,
+        document_type: DocumentType,
+    ) -> Result<()> {
+        let config_path = Self::config_path()?;
+
+        // Create backup if file exists
+        Self::create_backup(&config_path)?;
+
+        // Read and parse config file with toml_edit
+        let config_string = fs::read_to_string(&config_path)
+            .with_context(|| format!("Failed to read config file: {}", config_path.display()))?;
+        let mut doc = config_string
+            .parse::<DocumentMut>()
+            .context("Failed to parse config file as TOML")?;
+
+        // Convert document type to toml_edit table
+        let doc_type_table = struct_to_toml_table(&document_type)
+            .context("Failed to convert document type to TOML")?;
+
+        // Find the author in the authors array
+        let authors = doc["authors"]
+            .as_array_of_tables_mut()
+            .context("'authors' must be an array of tables")?;
+
+        let mut found = false;
+        for author in authors.iter_mut() {
+            if let Some(name) = author.get("name").and_then(|v| v.as_str())
+                && name == author_name
+            {
+                // Get or create document_types array
+                if !author.contains_key("document_types") {
+                    author["document_types"] =
+                        toml_edit::Item::ArrayOfTables(toml_edit::ArrayOfTables::new());
+                }
+
+                // Append to document_types array
+                let doc_types = author["document_types"]
+                    .as_array_of_tables_mut()
+                    .context("'document_types' must be an array of tables")?;
+
+                doc_types.push(doc_type_table);
+
+                found = true;
+                break;
+            }
+        }
+
+        if !found {
+            anyhow::bail!("Author '{}' not found in config", author_name);
+        }
+
+        // Write back to file
+        fs::write(&config_path, doc.to_string())
+            .with_context(|| format!("Failed to write config file: {}", config_path.display()))?;
+
+        // Update in-memory config
+        if let Some(author) = self.authors.iter_mut().find(|a| a.name == author_name) {
+            author.document_types.push(document_type);
+        }
+
+        debug!(
+            "Appended document type to author '{}' in config at {:?}",
+            author_name, config_path
+        );
         Ok(())
     }
 }
@@ -291,5 +412,45 @@ mod tests {
         };
 
         assert!(scanner.validate().is_ok());
+    }
+
+    mod struct_to_toml_table {
+        use super::*;
+
+        #[test]
+        fn author() {
+            let author = Author {
+                name: "Test".to_string(),
+                include_keywords: vec!["key1".to_string(), "key2".to_string()],
+                exclude_keywords: vec![],
+                directory: "test".to_string(),
+                pdf_keywords: vec![],
+                document_types: vec![],
+            };
+
+            let table = struct_to_toml_table(&author).unwrap();
+            assert!(table.contains_key("name"));
+            assert!(table.contains_key("directory"));
+            assert!(table.contains_key("include_keywords"));
+        }
+
+        #[test]
+        fn document_type() {
+            let doc_type = DocumentType {
+                name: "Invoice".to_string(),
+                include_keywords: vec!["invoice".to_string()],
+                exclude_keywords: vec![],
+                directory: "invoices".to_string(),
+                pdf_title_regex: None,
+                pdf_title_pattern: None,
+                pdf_date_regex: None,
+                pdf_keywords: vec![],
+            };
+
+            let table = struct_to_toml_table(&doc_type).unwrap();
+            assert!(table.contains_key("name"));
+            assert!(table.contains_key("directory"));
+            assert_eq!(table.get("name").unwrap().as_str().unwrap(), "Invoice");
+        }
     }
 }
