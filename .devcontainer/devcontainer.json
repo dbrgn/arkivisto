@@ -15,7 +15,7 @@
     // Resource limits for development
     "--memory=8g",
     "--memory-swap=8g",
-    "--cpus=4",
+    "--cpus=4"
   ],
 
   // Run as non-root user
@@ -31,7 +31,7 @@
   // Commands run after creating devcontainer
   "initializeCommand": {
     "create-opencode-config-dir": "mkdir -p ${HOME}/.config/opencode",
-    "create-opencode-auth-file": "mkdir -p ${HOME}/.local/share/opencode && touch ${HOME}/.local/share/opencode/auth.json",
+    "create-opencode-auth-file": "mkdir -p ${HOME}/.local/share/opencode && touch ${HOME}/.local/share/opencode/auth.json"
   },
 
   // Mounts
@@ -49,7 +49,7 @@
   // Container environment variables
   "containerEnv": {
     // Bash history
-    "HISTFILE": "/home/dev/.config-persistent/.bash_history",
+    "HISTFILE": "/home/dev/.config-persistent/.bash_history"
   },
 
   // Features to install
@@ -57,7 +57,7 @@
     "./features/opencode": {
       "version": "latest",
       "binaryType": "glibc"
-    },
+    }
   },
 
   // Forward ports
@@ -93,9 +93,8 @@
         "esbenp.prettier-vscode",
         // Rust
         "rust-lang.rust-analyzer",
-        "tamasfe.even-better-toml",
+        "tamasfe.even-better-toml"
       ]
     }
-  },
-
+  }
 }
