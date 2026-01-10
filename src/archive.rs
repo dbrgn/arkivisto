@@ -16,12 +16,9 @@ use regex::Regex;
 use tracing::{debug, warn};
 
 use crate::{
+    common::filenames,
     config::{Author, Config, DocumentType},
-    process::filenames,
 };
-
-/// Preview PDF filename in the scans directory
-const PREVIEW_PDF: &str = "preview.pdf";
 
 /// German month name prefixes for date parsing
 const MONTHS: [&str; 12] = [
@@ -737,7 +734,7 @@ pub fn set_pdf_metadata(
 
 /// Create a preview copy of the PDF in the scans directory.
 pub fn create_preview(pdf_path: &Path, scans_dir: &Path) -> Result<PathBuf> {
-    let preview_path = scans_dir.join(PREVIEW_PDF);
+    let preview_path = scans_dir.join(filenames::PREVIEW_PDF);
     fs::copy(pdf_path, &preview_path)
         .with_context(|| format!("Failed to create preview at {}", preview_path.display()))?;
     Ok(preview_path)
@@ -745,10 +742,11 @@ pub fn create_preview(pdf_path: &Path, scans_dir: &Path) -> Result<PathBuf> {
 
 /// Find all document directories that are ready for archiving.
 ///
-/// A directory is ready for archiving if it contains both `_final.pdf` and `_final.txt`.
+/// A directory is ready for archiving if it contains both `_processed.pdf` and `_processed.txt`.
 pub fn find_archivable_document_dirs(scans_dir: &Path) -> Result<Vec<PathBuf>> {
     let date_time_regex = Regex::new(r"^\d{8}-\d{6}$").expect("Invalid regex pattern");
 
+    debug!("Searching {} for archivable documents", scans_dir.display());
     let entries = fs::read_dir(scans_dir)
         .with_context(|| format!("Failed to read scans directory: {}", scans_dir.display()))?;
 
@@ -763,7 +761,8 @@ pub fn find_archivable_document_dirs(scans_dir: &Path) -> Result<Vec<PathBuf>> {
         })
         .filter(|path| {
             // Must have both _final.pdf and _final.txt
-            path.join(filenames::FINAL_PDF).is_file() && path.join(filenames::FINAL_TXT).is_file()
+            path.join(filenames::PROCESSED_PDF).is_file()
+                && path.join(filenames::PROCESSED_TXT).is_file()
         })
         .collect();
 
@@ -808,16 +807,21 @@ pub fn archive_document(config: &mut Config, document_dir: &Path, scans_dir: &Pa
     }
 
     // Prepare paths
-    let pdf_path = document_dir.join(filenames::FINAL_PDF);
-    let txt_path = document_dir.join(filenames::FINAL_TXT);
+    let pdf_path = document_dir.join(filenames::PROCESSED_PDF);
+    let txt_path = document_dir.join(filenames::PROCESSED_TXT);
     if !pdf_path.exists() {
-        debug!("Skipping {:?}: no _final.pdf found", document_dir);
+        debug!(
+            "Skipping {:?}: no {} found",
+            document_dir,
+            filenames::PROCESSED_PDF
+        );
         return Ok(());
     }
     if !txt_path.exists() {
         warn!(
-            "Skipping {:?}: no _final.txt found (OCR text required for archiving)",
-            document_dir
+            "Skipping {:?}: no {} found (OCR text required for archiving)",
+            document_dir,
+            filenames::PROCESSED_TXT
         );
         return Ok(());
     }
@@ -870,11 +874,11 @@ pub fn archive_document(config: &mut Config, document_dir: &Path, scans_dir: &Pa
     };
 
     // Create output PDF with metadata
-    let temp_output = document_dir.join("_out_final.pdf");
-    set_pdf_metadata(&pdf_path, &temp_output, &metadata)?;
+    let final_output = document_dir.join(filenames::FINAL_PDF);
+    set_pdf_metadata(&pdf_path, &final_output, &metadata)?;
 
     // Update preview with final metadata
-    fs::copy(&temp_output, &preview_path)?;
+    fs::copy(&final_output, &preview_path)?;
     println!(
         "Preview updated with metadata at: {}",
         preview_path.display()
@@ -908,8 +912,8 @@ pub fn archive_document(config: &mut Config, document_dir: &Path, scans_dir: &Pa
             .with_context(|| format!("Failed to create output directory: {}", parent.display()))?;
     }
 
-    // Copy to final location
-    fs::copy(&temp_output, &output_path)
+    // Copy to output path
+    fs::copy(&final_output, &output_path)
         .with_context(|| format!("Failed to copy PDF to {}", output_path.display()))?;
 
     // Remove processed directory

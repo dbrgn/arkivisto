@@ -9,24 +9,12 @@ use indicatif::{ProgressBar, ProgressFinish, ProgressStyle};
 use regex::Regex;
 use tracing::{debug, trace, warn};
 
-use crate::common::{self, CheckDependencyResult};
+use crate::common::{self, CheckDependencyResult, filenames};
 
 static DATE_TIME_REGEX: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
 
 /// OCRmyPDF Docker image and version
 static OCRMYPDF_IMAGE: &str = "docker.io/jbarlow83/ocrmypdf:v16.13.0";
-
-/// Special filenames used during document processing
-pub mod filenames {
-    /// Intermediate combined TIFF file
-    pub const COMBINED_TIF: &str = "_combined.tif";
-    /// Intermediate combined PDF file (before OCR)
-    pub const COMBINED_PDF: &str = "_combined.pdf";
-    /// Final output PDF after OCR processing
-    pub const FINAL_PDF: &str = "_final.pdf";
-    /// OCR text sidecar file
-    pub const FINAL_TXT: &str = "_final.txt";
-}
 
 /// Commands used to process files
 mod commands {
@@ -119,7 +107,7 @@ pub fn find_unprocessed_document_dirs(
                 .is_some_and(|name| date_time_regex.is_match(name))
         })
         // Filter out directories that already have a processed file
-        .filter(|path| !path.join(filenames::FINAL_PDF).is_file()))
+        .filter(|path| !path.join(filenames::PROCESSED_PDF).is_file()))
 }
 
 /// Process scanned files in a directory.
@@ -283,7 +271,7 @@ pub fn process_document(
         ))
         .arg(OCRMYPDF_IMAGE)
         .arg("--sidecar")
-        .arg(Path::new("/document/").join(filenames::FINAL_TXT))
+        .arg(Path::new("/document/").join(filenames::PROCESSED_TXT))
         .arg(
             Path::new("/document/").join(
                 pdf_out
@@ -291,7 +279,7 @@ pub fn process_document(
                     .context("Failed to get output PDF file name")?,
             ),
         )
-        .arg(Path::new("/document/").join(filenames::FINAL_PDF))
+        .arg(Path::new("/document/").join(filenames::PROCESSED_PDF))
         .output()?;
     if !output.status.success() {
         warn!(

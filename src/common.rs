@@ -1,5 +1,21 @@
 use std::process::Command;
 
+/// Special filenames used during document processing
+pub mod filenames {
+    /// Intermediate combined TIFF file
+    pub const COMBINED_TIF: &str = "_combined.tif";
+    /// Intermediate combined PDF file (before OCR)
+    pub const COMBINED_PDF: &str = "_combined.pdf";
+    /// Final output PDF after OCR processing
+    pub const PROCESSED_PDF: &str = "_processed.pdf";
+    /// OCR text sidecar file
+    pub const PROCESSED_TXT: &str = "_processed.txt";
+    /// Final output PDF
+    pub const FINAL_PDF: &str = "_final.pdf";
+    /// Preview PDF filename in the scans directory (during archiving)
+    pub const PREVIEW_PDF: &str = "preview.pdf";
+}
+
 #[derive(Debug, Hash, PartialEq, Copy, Clone)]
 pub struct Dependency {
     /// Binary name
