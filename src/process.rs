@@ -9,6 +9,8 @@ use indicatif::{ProgressBar, ProgressFinish, ProgressStyle};
 use regex::Regex;
 use tracing::{debug, warn};
 
+use crate::common::{self, CheckDependencyResult};
+
 static DATE_TIME_REGEX: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
 
 /// OCRmyPDF Docker image version
@@ -22,6 +24,28 @@ mod filenames {
     pub const COMBINED_PDF: &str = "_combined.pdf";
     /// Final output PDF after OCR processing
     pub const FINAL_PDF: &str = "_final.pdf";
+}
+
+/// Commands used to process files
+mod commands {
+    use crate::common::Dependency;
+
+    pub const MAGICK: Dependency = Dependency {
+        bin: "magick",
+        name: "Imagemagick",
+    };
+    pub const TIFFCP: Dependency = Dependency {
+        bin: "tiffcp",
+        name: "libtiff",
+    };
+    pub const DOCKER: Dependency = Dependency {
+        bin: "docker",
+        name: "Docker",
+    };
+}
+
+pub fn check_dependencies() -> CheckDependencyResult {
+    common::check_dependencies(&[commands::MAGICK, commands::TIFFCP, commands::DOCKER])
 }
 
 /// Return iterator over unprocessed document directories.
@@ -69,8 +93,6 @@ pub fn process_document(
     multiprogress: Option<&indicatif::MultiProgress>,
 ) -> Result<()> {
     debug!("Processing directory {directory:?}");
-
-    // TODO: Check dependencies at setup time
 
     // Collect all unprocessed TIFF files
     let mut tifs_step0: Vec<String> = fs::read_dir(directory)
@@ -135,7 +157,7 @@ pub fn process_document(
 
         // TODO: Tweak parameters
         // TODO: Compress with LZW or something else?
-        let output = Command::new("magick")
+        let output = Command::new(commands::MAGICK.bin)
             .arg(tif_in.as_os_str())
             .arg("-auto-level")
             .arg("-level")
@@ -157,7 +179,7 @@ pub fn process_document(
     // Combine TIFs
     progress.set_message("Combining TIFs");
     let tif_combined = directory.join(filenames::COMBINED_TIF);
-    let output = Command::new("tiffcp")
+    let output = Command::new(commands::TIFFCP.bin)
         .arg("-c")
         .arg("lzw")
         .args(&tifs_step1)
@@ -176,7 +198,7 @@ pub fn process_document(
     // Convert TIF to PDF
     progress.set_message("Converting to PDF");
     let pdf_out = directory.join(filenames::COMBINED_PDF);
-    let output = Command::new("magick")
+    let output = Command::new(commands::MAGICK.bin)
         .arg(tif_combined.as_os_str())
         .arg("-compress")
         .arg("JPEG")
@@ -195,7 +217,7 @@ pub fn process_document(
     // Run OCR and other postprocessing
     // TODO: Download docker image at setup time
     progress.set_message("Running OCR and generating PDF/A");
-    let output = Command::new("docker")
+    let output = Command::new(commands::DOCKER.bin)
         .arg("run")
         .arg("--rm")
         .arg("-v")

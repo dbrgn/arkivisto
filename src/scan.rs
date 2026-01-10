@@ -10,9 +10,24 @@ use anyhow::{Context, Result, anyhow, ensure};
 use tracing::{debug, trace, warn};
 
 use crate::{
+    common::{self, CheckDependencyResult},
     config::{Scanner, ScannerSources},
     fs_utils,
 };
+
+/// Commands used to process files
+mod commands {
+    use crate::common::Dependency;
+
+    pub const SCANIMAGE: Dependency = Dependency {
+        bin: "scanimage",
+        name: "SANE",
+    };
+}
+
+pub fn check_dependencies() -> CheckDependencyResult {
+    common::check_dependencies(&[commands::SCANIMAGE])
+}
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum ScanMode {

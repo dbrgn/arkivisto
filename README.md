@@ -21,6 +21,15 @@ Current implementation status:
 - [x] Postprocessing
 - [ ] Archiving
 
+## Dependencies
+
+You need the following binaries on your system:
+
+- `scanimage` (part of SANE)
+- `magick` (part of Imagemagick)
+- `tiffcp` (part of libtiff)
+- `docker` (part of Docker or Podman)
+
 ## History
 
 Back in 2014, I wrote a little Python script called
@@ -56,7 +65,6 @@ documents in TIFF format. This is useful for testing and debugging purposes.
 To use fake scanning, pass the `--fake-scan` flag to the arkvisto binary. Note
 that the `testdata/` directory must exist in the current working directory, and
 that the binary must be built in debug mode.
-
 
 [github-actions]: https://github.com/dbrgn/arkivisto/actions?query=branch%3Amain
 [github-actions-badge]: https://github.com/dbrgn/arkivisto/actions/workflows/ci.yml/badge.svg?branch=main

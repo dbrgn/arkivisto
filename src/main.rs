@@ -4,9 +4,10 @@ use clap::Parser;
 use tracing::{debug, level_filters::LevelFilter};
 use tracing_subscriber::{filter::Targets, prelude::*};
 
-use crate::args::Mode;
+use crate::{args::Mode, common::CheckDependencyResult};
 
 mod args;
+mod common;
 mod config;
 mod fs_utils;
 mod process;
@@ -56,6 +57,22 @@ fn main() -> Result<()> {
             fake_scan: args.fake_scan,
         })
     };
+
+    // Check dependencies on external commands
+    let mut check_dependency_result = CheckDependencyResult::AllAvailable;
+    if matches!(args.mode, Mode::Single | Mode::Process) {
+        check_dependency_result.merge(process::check_dependencies());
+    }
+    if matches!(args.mode, Mode::Single | Mode::Scan) {
+        check_dependency_result.merge(scan::check_dependencies());
+    }
+    if let CheckDependencyResult::SomeMissing(missing) = check_dependency_result {
+        eprintln!("Error: Missing system dependencies:");
+        for dep in &missing {
+            eprintln!("  - {} (part of {})", dep.bin, dep.name);
+        }
+        std::process::exit(1);
+    }
 
     // Act depending on mode
     match args.mode {
