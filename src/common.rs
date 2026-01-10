@@ -31,9 +31,10 @@ impl CheckDependencyResult {
 pub fn check_dependencies(dependencies: &[Dependency]) -> CheckDependencyResult {
     let mut missing = vec![];
     for dependency in dependencies {
-        // Try to spawn the command - .status() returns Err only if the binary
-        // cannot be found/executed, not if it exits with a non-zero code
+        // Try to spawn the command. `.status()`` returns Err only if the binary cannot be found/executed, not
+        // if it exits with a non-zero code.
         let exists = Command::new(dependency.bin)
+            .arg("--version")
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .stdin(std::process::Stdio::null())
