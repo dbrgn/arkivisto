@@ -100,16 +100,16 @@ pub struct DocumentType {
     #[serde(default)]
     pub exclude_keywords: Vec<String>,
     /// Directory name for this document type's files (relative to author dir, or an absolute path)
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub directory: String,
     /// Regex pattern to extract title from OCR text
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pdf_title_regex: Option<String>,
     /// Replacement pattern for title (can use regex capture groups)
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pdf_title_pattern: Option<String>,
     /// Regex pattern to limit date search to a specific region of OCR text
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pdf_date_regex: Option<String>,
     /// Additional keywords to embed in PDF metadata for this document type
     #[serde(default)]
@@ -133,25 +133,25 @@ pub struct Scanner {
     pub device_name: String,
 
     /// Additional arguments passed to scanimage
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub additional_args: Vec<String>,
 
     /// ADF single-sided source (if available)
     ///
     /// Use `scanimage --help -d <device> 2>&1 | grep source` to view all available sources.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_adf_single: Option<String>,
 
     /// ADF duplex source (if available)
     ///
     /// Use `scanimage --help -d <device> 2>&1 | grep source` to view all available sources.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_adf_duplex: Option<String>,
 
     /// Flatbed source (if available)
     ///
     /// Use `scanimage --help -d <device> 2>&1 | grep source` to view all available sources.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_flatbed: Option<String>,
 }
 

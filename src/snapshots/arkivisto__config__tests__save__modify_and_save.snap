@@ -9,9 +9,6 @@ tools:
 scanners:
   - id: test_scanner
     device_name: test:scanner:device
-    additional_args: []
-    source_adf_single: null
-    source_adf_duplex: null
     source_flatbed: Flatbed
 authors:
   - name: Musterfirma
@@ -23,8 +20,4 @@ authors:
       - name: Invoice
         include_keywords: []
         exclude_keywords: []
-        directory: ""
-        pdf_title_regex: null
-        pdf_title_pattern: null
-        pdf_date_regex: null
         pdf_keywords: []

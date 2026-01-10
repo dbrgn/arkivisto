@@ -9,8 +9,6 @@ tools:
 scanners:
   - id: brother
     device_name: "brother3:net1;dev0"
-    additional_args: []
     source_adf_single: Automatic Document Feeder(centrally aligned)
-    source_adf_duplex: ~
     source_flatbed: FlatBed
 authors: []
