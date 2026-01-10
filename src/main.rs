@@ -86,7 +86,7 @@ fn main() -> Result<()> {
             // Scan, process and archive single document
             let scan_context = get_scan_context()?;
             let document_dir = scan::scan_document(&scan_context)?;
-            process::process_document(&document_dir, None)
+            process::process_document(&document_dir, &config, None)
                 .context("Failed to post-process document")?;
             archive::archive_document(&mut config, &document_dir, &scans_dir)
                 .context("Failed to archive document")?;
@@ -111,7 +111,7 @@ fn main() -> Result<()> {
                     .println(format!("Processing {} directories", document_dirs.len()))
                     .ok();
                 for document_dir in document_dirs.iter() {
-                    process::process_document(document_dir, Some(&multiprogress))
+                    process::process_document(document_dir, &config, Some(&multiprogress))
                         .context("Failed to post-process document")?;
                 }
             }

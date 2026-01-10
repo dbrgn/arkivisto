@@ -13,6 +13,39 @@ pub struct Config {
     /// Author configuration for archiving
     #[serde(default)]
     pub authors: Vec<Author>,
+    /// Tool-specific configuration
+    #[serde(default)]
+    pub tools: Tools,
+}
+
+/// Configuration for external tools
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct Tools {
+    /// OCRmyPDF configuration
+    #[serde(default)]
+    pub ocrmypdf: OcrmypdfConfig,
+}
+
+/// Configuration for OCRmyPDF
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct OcrmypdfConfig {
+    /// Language(s) for OCR (e.g., "eng" or "deu+eng")
+    ///
+    /// Available languages: eng, chi-sim, deu, fra, osd, por, spa
+    #[serde(default = "default_ocrmypdf_language")]
+    pub language: String,
+}
+
+impl Default for OcrmypdfConfig {
+    fn default() -> Self {
+        Self {
+            language: default_ocrmypdf_language(),
+        }
+    }
+}
+
+fn default_ocrmypdf_language() -> String {
+    "eng".to_string()
 }
 
 /// An author represents a person or organization that documents can be attributed to.

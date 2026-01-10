@@ -10,7 +10,10 @@ use nix::unistd::{Gid, Uid};
 use regex::Regex;
 use tracing::{debug, trace, warn};
 
-use crate::common::{self, CheckDependencyResult, filenames};
+use crate::{
+    common::{self, CheckDependencyResult, filenames},
+    config::Config,
+};
 
 static DATE_TIME_REGEX: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
 
@@ -129,10 +132,13 @@ pub fn find_unprocessed_document_dirs(scans_dir: &std::path::Path) -> Result<Vec
 /// Parameters:
 ///   directory:
 ///     The directory to process.
+///   config:
+///     The application configuration.
 ///   multiprogress:
 ///     When defined, this will be used to create progress bars.
 pub fn process_document(
     directory: &Path,
+    config: &Config,
     multiprogress: Option<&indicatif::MultiProgress>,
 ) -> Result<()> {
     debug!("Processing directory {directory:?}");
@@ -277,6 +283,7 @@ pub fn process_document(
     // Get current UID/GID to ensure output files are owned by the current user
     let (uid, gid) = get_current_uid_gid();
 
+    trace!("OCRmyPDF config: {:?}", &config.tools.ocrmypdf);
     let output = Command::new(commands::DOCKER.bin)
         .arg("run")
         .arg("--rm")
@@ -290,6 +297,8 @@ pub fn process_document(
                 .context("Failed to convert directory path to string")?
         ))
         .arg(OCRMYPDF_IMAGE)
+        .arg("--language")
+        .arg(&config.tools.ocrmypdf.language)
         .arg("--sidecar")
         .arg(Path::new("/document/").join(filenames::PROCESSED_TXT))
         .arg(
