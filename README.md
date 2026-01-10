@@ -19,7 +19,7 @@ Current implementation status:
 - [x] Scanning multiple pages from flatbed
 - [ ] Scanning multiple pages from mixed sources
 - [x] Postprocessing
-- [ ] Archiving
+- [x] Archiving
 
 ## Dependencies
 

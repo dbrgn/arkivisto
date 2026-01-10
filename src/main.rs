@@ -6,6 +6,7 @@ use tracing_subscriber::{filter::Targets, prelude::*};
 
 use crate::{args::Mode, common::CheckDependencyResult};
 
+mod archive;
 mod args;
 mod common;
 mod config;
@@ -37,8 +38,8 @@ fn main() -> Result<()> {
     // Initialize tracing
     initialize_tracing(args.log_level.to_filter())?;
 
-    // Load config
-    let config = config::Config::load().context("Failed to load config")?;
+    // Load config (mutable for archive mode to add new authors/document types)
+    let mut config = config::Config::load().context("Failed to load config")?;
 
     // Determine the XDG cache directory, creating it if it doesn't exist
     // TODO: Should this really be in the cache dir? Or is it better to store files in a more permanent location?
@@ -87,7 +88,8 @@ fn main() -> Result<()> {
             let document_dir = scan::scan_document(&scan_context)?;
             process::process_document(&document_dir, None)
                 .context("Failed to post-process document")?;
-            // TODO archive
+            archive::archive_document(&mut config, &document_dir, &scans_dir)
+                .context("Failed to archive document")?;
         }
         Mode::Scan => {
             // Scan documents in a loop
@@ -120,7 +122,16 @@ fn main() -> Result<()> {
             }
         }
         Mode::Archive => {
-            todo!("Archiving not yet implemented");
+            // Archive any processed documents
+            let document_dirs = archive::find_archivable_document_dirs(&scans_dir)?;
+            if document_dirs.is_empty() {
+                println!("No documents ready for archiving.");
+            } else {
+                for document_dir in document_dirs {
+                    archive::archive_document(&mut config, &document_dir, &scans_dir)
+                        .context("Failed to archive document")?;
+                }
+            }
         }
     }
 

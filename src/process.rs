@@ -17,13 +17,15 @@ static DATE_TIME_REGEX: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
 static OCRMYPDF_IMAGE: &str = "docker.io/jbarlow83/ocrmypdf:v16.13.0";
 
 /// Special filenames used during document processing
-mod filenames {
+pub mod filenames {
     /// Intermediate combined TIFF file
     pub const COMBINED_TIF: &str = "_combined.tif";
     /// Intermediate combined PDF file (before OCR)
     pub const COMBINED_PDF: &str = "_combined.pdf";
     /// Final output PDF after OCR processing
     pub const FINAL_PDF: &str = "_final.pdf";
+    /// OCR text sidecar file
+    pub const FINAL_TXT: &str = "_final.txt";
 }
 
 /// Commands used to process files
@@ -148,12 +150,26 @@ pub fn process_document(
         .collect();
     tifs_step0.sort();
 
-    // If no TIFF files are found, delete directory and return error
+    // If no TIFF files are found, ask user if they want to delete the directory
     if tifs_step0.is_empty() {
-        warn!("No TIFF files found in directory {directory:?}, removing directory");
-        fs::remove_dir_all(directory)
-            .context("Failed to remove document directory without TIFF files")?;
-        return Err(anyhow!("No TIFF files found in directory"));
+        warn!("No TIFF files found in directory {directory:?}");
+
+        // Ask for confirmation before deleting
+        let should_delete = inquire::Confirm::new(&format!(
+            "No TIFF files found in {}. Delete directory?",
+            directory.display()
+        ))
+        .with_default(true)
+        .prompt()
+        .unwrap_or(false); // If prompt fails (e.g., non-interactive), don't delete
+
+        if should_delete {
+            fs::remove_dir_all(directory)
+                .context("Failed to remove document directory without TIFF files")?;
+            return Err(anyhow!("No TIFF files found in directory (deleted)"));
+        } else {
+            return Err(anyhow!("No TIFF files found in directory (kept)"));
+        }
     }
 
     // Initialize progress bar
@@ -266,6 +282,8 @@ pub fn process_document(
                 .context("Failed to convert directory path to string")?
         ))
         .arg(OCRMYPDF_IMAGE)
+        .arg("--sidecar")
+        .arg(Path::new("/document/").join(filenames::FINAL_TXT))
         .arg(
             Path::new("/document/").join(
                 pdf_out
