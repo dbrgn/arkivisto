@@ -1,0 +1,7 @@
+---
+source: src/args.rs
+expression: args
+---
+mode: Single
+log_level: Info
+fake_scan: false

@@ -1,0 +1,19 @@
+---
+source: src/args.rs
+expression: help
+---
+Usage: arkivisto [OPTIONS] [MODE]
+
+Arguments:
+  [MODE]
+          Processing mode [default: single] [possible values: scan, process, archive, single]
+
+Options:
+  -l, --log-level <LOG_LEVEL>
+          Log level [default: info] [possible values: trace, debug, info, warn, error]
+      --fake-scan
+          Dev mode: Don't actually scan, but use simulated scan TIFFs
+  -h, --help
+          Print help
+  -V, --version
+          Print version

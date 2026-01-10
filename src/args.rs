@@ -2,6 +2,7 @@ use clap::{Parser, ValueEnum};
 use tracing_subscriber::filter::LevelFilter;
 
 #[derive(Debug, Clone, ValueEnum, Default)]
+#[cfg_attr(test, derive(serde::Serialize))]
 pub enum LogLevel {
     Trace,
     Debug,
@@ -37,6 +38,7 @@ impl std::fmt::Display for LogLevel {
 }
 
 #[derive(Debug, Clone, ValueEnum, Default)]
+#[cfg_attr(test, derive(serde::Serialize))]
 pub enum Mode {
     Scan,
     Process,
@@ -46,6 +48,7 @@ pub enum Mode {
 }
 
 #[derive(Parser, Debug)]
+#[cfg_attr(test, derive(serde::Serialize))]
 #[command(author, version, about, long_about = None)]
 #[command(next_line_help = true)]
 pub struct Args {
@@ -61,4 +64,107 @@ pub struct Args {
     #[cfg_attr(not(debug_assertions), arg(skip))]
     #[cfg_attr(debug_assertions, arg(long))]
     pub fake_scan: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::CommandFactory;
+    use insta::assert_yaml_snapshot;
+
+    use super::{Args, LogLevel, Mode};
+
+    mod help_text {
+        use insta::assert_snapshot;
+
+        use super::*;
+
+        #[test]
+        fn main_help() {
+            let mut cmd = Args::command();
+            let help = cmd.render_help().to_string();
+            assert_snapshot!(help);
+        }
+    }
+
+    mod parse_args {
+        use clap::Parser;
+
+        use super::*;
+
+        #[test]
+        fn default_args() {
+            let args = Args::parse_from(["arkivisto"]);
+            assert_yaml_snapshot!(args);
+        }
+
+        #[test]
+        fn scan_mode() {
+            let args = Args::parse_from(["arkivisto", "scan"]);
+            assert!(matches!(args.mode, Mode::Scan));
+        }
+
+        #[test]
+        fn process_mode() {
+            let args = Args::parse_from(["arkivisto", "process"]);
+            assert!(matches!(args.mode, Mode::Process));
+        }
+
+        #[test]
+        fn archive_mode() {
+            let args = Args::parse_from(["arkivisto", "archive"]);
+            assert!(matches!(args.mode, Mode::Archive));
+        }
+
+        #[test]
+        fn single_mode() {
+            let args = Args::parse_from(["arkivisto", "single"]);
+            assert!(matches!(args.mode, Mode::Single));
+        }
+
+        #[test]
+        fn custom_log_level() {
+            let args = Args::parse_from(["arkivisto", "-l", "debug"]);
+            assert!(matches!(args.log_level, LogLevel::Debug));
+        }
+
+        #[test]
+        fn all_log_levels() {
+            for (input, expected) in [
+                ("trace", LogLevel::Trace),
+                ("debug", LogLevel::Debug),
+                ("info", LogLevel::Info),
+                ("warn", LogLevel::Warn),
+                ("error", LogLevel::Error),
+            ] {
+                let args = Args::parse_from(["arkivisto", "-l", input]);
+                assert!(
+                    matches!(args.log_level, ref level if std::mem::discriminant(level) == std::mem::discriminant(&expected)),
+                    "Expected {:?} for input '{}'",
+                    expected,
+                    input
+                );
+            }
+        }
+    }
+
+    mod error_messages {
+        use clap::Parser;
+        use insta::assert_snapshot;
+
+        use super::*;
+
+        #[test]
+        fn invalid_mode() {
+            let result = Args::try_parse_from(["arkivisto", "invalid_mode"]);
+            let err = result.unwrap_err();
+            assert_snapshot!(err.to_string());
+        }
+
+        #[test]
+        fn invalid_log_level() {
+            let result = Args::try_parse_from(["arkivisto", "-l", "invalid"]);
+            let err = result.unwrap_err();
+            assert_snapshot!(err.to_string());
+        }
+    }
 }
