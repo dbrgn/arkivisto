@@ -3,6 +3,9 @@ source: src/config.rs
 expression: config
 ---
 outdir: /tmp/archive
+tools:
+  ocrmypdf:
+    language: eng
 scanners:
   - id: test_scanner
     device_name: "test:scanner:device"
@@ -11,6 +14,3 @@ scanners:
     source_adf_duplex: ~
     source_flatbed: Flatbed
 authors: []
-tools:
-  ocrmypdf:
-    language: eng

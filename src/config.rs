@@ -6,25 +6,27 @@ use std::{
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use toml_edit::DocumentMut;
 use tracing::{debug, trace};
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Config {
     /// Default output directory for archived files
     pub outdir: PathBuf,
-    /// Scanner configuration
-    pub scanners: Vec<Scanner>,
-    /// Author configuration for archiving
-    #[serde(default)]
-    pub authors: Vec<Author>,
+
     /// Tool-specific configuration
     #[serde(default)]
     pub tools: Tools,
+
+    /// Scanner configuration
+    pub scanners: Vec<Scanner>,
+
+    /// Author configuration for archiving
+    #[serde(default)]
+    pub authors: Vec<Author>,
 }
 
 /// Configuration for external tools
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Default, Deserialize, Serialize)]
 pub struct Tools {
     /// OCRmyPDF configuration
     #[serde(default)]
@@ -32,7 +34,7 @@ pub struct Tools {
 }
 
 /// Configuration for OCRmyPDF
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct OcrmypdfConfig {
     /// Language(s) for OCR (e.g., "eng" or "deu+eng")
     ///
@@ -120,7 +122,7 @@ impl Display for DocumentType {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Scanner {
     /// Identifier
     pub id: String,
@@ -175,26 +177,12 @@ impl Display for Scanner {
     }
 }
 
-/// Helper function to convert a serializable struct to a toml_edit Table
-fn struct_to_toml_table<T: Serialize>(value: &T) -> Result<toml_edit::Table> {
-    // Serialize the struct to a TOML string
-    let toml_string = toml::to_string(value).context("Failed to serialize struct to TOML")?;
-
-    // Parse it back with toml_edit to get a document
-    let doc = toml_string
-        .parse::<DocumentMut>()
-        .context("Failed to parse serialized TOML")?;
-
-    // The serialized struct is the root table
-    Ok(doc.as_table().clone())
-}
-
 impl Config {
     /// Get the path to the config file
     fn config_path() -> Result<PathBuf> {
         let config_dir = app_dirs::app_root(app_dirs::AppDataType::UserConfig, &super::APP_INFO)
             .context("Could not determine XDG app config directory")?;
-        Ok(config_dir.join("config.toml"))
+        Ok(config_dir.join("config.yml"))
     }
 
     /// Load config from a specific path
@@ -213,7 +201,8 @@ impl Config {
         debug!("Loading config from {:?}", config_path);
         let config_string = fs::read_to_string(config_path)
             .with_context(|| format!("Failed to read config file: {}", config_path.display()))?;
-        let config: Self = toml::from_str(&config_string).context("Failed to parse config file")?;
+        let config: Self =
+            serde_yml::from_str(&config_string).context("Failed to parse config file")?;
 
         // Validate scanners
         for scanner in &config.scanners {
@@ -234,7 +223,7 @@ impl Config {
     /// Create backup if file exists
     fn create_backup(config_path: &Path) -> Result<()> {
         if config_path.exists() {
-            let backup_path = config_path.with_extension("toml~");
+            let backup_path = config_path.with_extension("yml~");
             fs::copy(config_path, &backup_path).with_context(|| {
                 format!(
                     "Failed to create backup of config file: {}",
@@ -246,18 +235,17 @@ impl Config {
         Ok(())
     }
 
-    /// Append a new author to the config file, preserving formatting
+    /// Save the config to disk
     ///
-    /// This method updates both the in-memory config and the config file on disk.
+    /// This method serializes the current in-memory config to YAML and writes it to disk.
+    /// A backup of the existing file is created before writing.
     ///
     /// Parameters:
-    ///   author:
-    ///     The author to append.
     ///   config_path:
     ///     If set, this config path will be used. Otherwise, the default config path will be used.
-    pub fn append_author(&mut self, author: Author, config_path: Option<PathBuf>) -> Result<()> {
+    pub fn save(&self, config_path: Option<&Path>) -> Result<()> {
         let config_path = if let Some(path) = config_path {
-            path
+            path.to_path_buf()
         } else {
             Self::config_path()?
         };
@@ -265,122 +253,14 @@ impl Config {
         // Create backup if file exists
         Self::create_backup(&config_path)?;
 
-        // Read and parse config file with toml_edit
-        let config_string = fs::read_to_string(&config_path)
-            .with_context(|| format!("Failed to read config file: {}", config_path.display()))?;
-        let mut doc = config_string
-            .parse::<DocumentMut>()
-            .context("Failed to parse config file as TOML")?;
+        // Serialize to YAML
+        let yaml = serde_yml::to_string(self).context("Failed to serialize config to YAML")?;
 
-        // Convert author to toml_edit table
-        let author_table =
-            struct_to_toml_table(&author).context("Failed to convert author to TOML")?;
-
-        // Get or create authors array
-        if !doc.contains_key("authors") {
-            doc["authors"] = toml_edit::Item::ArrayOfTables(toml_edit::ArrayOfTables::new());
-        }
-
-        // Append to authors array
-        let authors = doc["authors"]
-            .as_array_of_tables_mut()
-            .context("'authors' must be an array of tables")?;
-
-        authors.push(author_table);
-
-        // Write back to file
-        fs::write(&config_path, doc.to_string())
+        // Write to file
+        fs::write(&config_path, yaml)
             .with_context(|| format!("Failed to write config file: {}", config_path.display()))?;
 
-        // Update in-memory config
-        self.authors.push(author);
-
-        debug!("Appended author to config at {:?}", config_path);
-        Ok(())
-    }
-
-    /// Append a new document type to an author in the config file, preserving formatting
-    ///
-    /// This method updates both the in-memory config and the config file on disk.
-    ///
-    /// Parameters:
-    ///   author_name:
-    ///     Document type will be appended to the author with this name.
-    ///   document_type:
-    ///     The document type to append.
-    ///   config_path:
-    ///     If set, this config path will be used. Otherwise, the default config path will be used.
-    pub fn append_document_type(
-        &mut self,
-        author_name: &str,
-        document_type: DocumentType,
-        config_path: Option<PathBuf>,
-    ) -> Result<()> {
-        let config_path = if let Some(path) = config_path {
-            path
-        } else {
-            Self::config_path()?
-        };
-
-        // Create backup if file exists
-        Self::create_backup(&config_path)?;
-
-        // Read and parse config file with toml_edit
-        let config_string = fs::read_to_string(&config_path)
-            .with_context(|| format!("Failed to read config file: {}", config_path.display()))?;
-        let mut doc = config_string
-            .parse::<DocumentMut>()
-            .context("Failed to parse config file as TOML")?;
-
-        // Convert document type to toml_edit table
-        let doc_type_table = struct_to_toml_table(&document_type)
-            .context("Failed to convert document type to TOML")?;
-
-        // Find the author in the authors array
-        let authors = doc["authors"]
-            .as_array_of_tables_mut()
-            .context("'authors' must be an array of tables")?;
-
-        let mut found = false;
-        for author in authors.iter_mut() {
-            if let Some(name) = author.get("name").and_then(|v| v.as_str())
-                && name == author_name
-            {
-                // Get or create document_types array
-                if !author.contains_key("document_types") {
-                    author["document_types"] =
-                        toml_edit::Item::ArrayOfTables(toml_edit::ArrayOfTables::new());
-                }
-
-                // Append to document_types array
-                let doc_types = author["document_types"]
-                    .as_array_of_tables_mut()
-                    .context("'document_types' must be an array of tables")?;
-
-                doc_types.push(doc_type_table);
-
-                found = true;
-                break;
-            }
-        }
-
-        if !found {
-            anyhow::bail!("Author '{}' not found in config", author_name);
-        }
-
-        // Write back to file
-        fs::write(&config_path, doc.to_string())
-            .with_context(|| format!("Failed to write config file: {}", config_path.display()))?;
-
-        // Update in-memory config
-        if let Some(author) = self.authors.iter_mut().find(|a| a.name == author_name) {
-            author.document_types.push(document_type);
-        }
-
-        debug!(
-            "Appended document type to author '{}' in config at {:?}",
-            author_name, config_path
-        );
+        debug!("Saved config to {:?}", config_path);
         Ok(())
     }
 }
@@ -393,15 +273,15 @@ mod tests {
 
     #[test]
     fn parse_minimal_config() {
-        let config: Config = toml::from_str(
+        let config: Config = serde_yml::from_str(
             r#"
-            outdir = "/tmp/foo"
+outdir: /tmp/foo
 
-            [[scanners]]
-            id = "brother"
-            device_name = "brother3:net1;dev0"
-            source_adf_single = "Automatic Document Feeder(centrally aligned)"
-            source_flatbed = "FlatBed"
+scanners:
+  - id: brother
+    device_name: "brother3:net1;dev0"
+    source_adf_single: Automatic Document Feeder(centrally aligned)
+    source_flatbed: FlatBed
             "#,
         )
         .context("Failed to parse config file")
@@ -414,15 +294,15 @@ mod tests {
     fn load_config() {
         // Write a minimal valid config
         let temp_dir = TempDir::new().unwrap();
-        let config_path = temp_dir.path().join("config.toml");
+        let config_path = temp_dir.path().join("config.yml");
         let config_content = r#"
-outdir = "/tmp/archive"
+outdir: /tmp/archive
 
-[[scanners]]
-id = "test_scanner"
-device_name = "test:scanner:device"
-source_flatbed = "Flatbed"
-source_adf_single = "ADF"
+scanners:
+  - id: test_scanner
+    device_name: "test:scanner:device"
+    source_flatbed: Flatbed
+    source_adf_single: ADF
 "#;
         fs::write(&config_path, config_content).unwrap();
 
@@ -475,13 +355,13 @@ source_adf_single = "ADF"
         fn scanner_without_sources_fails_loading() {
             // Write a minimal config without source
             let temp_dir = TempDir::new().unwrap();
-            let config_path = temp_dir.path().join("config.toml");
+            let config_path = temp_dir.path().join("config.yml");
             let config_content = r#"
-outdir = "/tmp/archive"
+outdir: /tmp/archive
 
-[[scanners]]
-id = "test_scanner"
-device_name = "test:scanner:device"
+scanners:
+  - id: test_scanner
+    device_name: "test:scanner:device"
 "#;
             fs::write(&config_path, config_content).unwrap();
 
@@ -491,114 +371,40 @@ device_name = "test:scanner:device"
         }
     }
 
-    mod struct_to_toml_table {
+    mod save {
         use super::*;
 
         #[test]
-        fn author() {
-            let author = Author {
-                name: "Test".to_string(),
-                include_keywords: vec!["key1".to_string(), "key2".to_string()],
-                exclude_keywords: vec![],
-                directory: "test".to_string(),
-                pdf_keywords: vec![],
-                document_types: vec![],
-            };
-
-            let table = struct_to_toml_table(&author).unwrap();
-            assert!(table.contains_key("name"));
-            assert!(table.contains_key("directory"));
-            assert!(table.contains_key("include_keywords"));
-        }
-
-        #[test]
-        fn document_type() {
-            let doc_type = DocumentType {
-                name: "Invoice".to_string(),
-                include_keywords: vec!["invoice".to_string()],
-                exclude_keywords: vec![],
-                directory: "invoices".to_string(),
-                pdf_title_regex: None,
-                pdf_title_pattern: None,
-                pdf_date_regex: None,
-                pdf_keywords: vec![],
-            };
-
-            let table = struct_to_toml_table(&doc_type).unwrap();
-            assert!(table.contains_key("name"));
-            assert!(table.contains_key("directory"));
-            assert_eq!(table.get("name").unwrap().as_str().unwrap(), "Invoice");
-        }
-    }
-
-    mod modification {
-        use super::*;
-
-        #[test]
-        fn append_author() {
+        fn modify_and_save() {
             // Write a minimal valid config
             let temp_dir = TempDir::new().unwrap();
-            let config_path = temp_dir.path().join("config.toml");
+            let config_path = temp_dir.path().join("config.yml");
             let config_content = r#"
-outdir = "/tmp/archive"
+outdir: /tmp/archive
 
-# First scanner
-[[scanners]]
-id = "test_scanner"
-device_name = "test:scanner:device"
-source_flatbed =  "Flatbed" # Double space
+# Scanner configuration
+scanners:
+  - id: test_scanner
+    device_name: "test:scanner:device"
+    source_flatbed: Flatbed
 "#;
             fs::write(&config_path, config_content).unwrap();
 
-            // Load and modify config
+            // Load config
             let mut config = Config::load_from_path(&config_path).unwrap();
+
+            // Add an author
             let author = Author {
-                name: "Author".into(),
+                name: "Musterfirma".into(),
                 include_keywords: vec![],
                 exclude_keywords: vec![],
-                directory: "/tmp/somedir".into(),
+                directory: "musterfirma".into(),
                 pdf_keywords: vec![],
                 document_types: vec![],
             };
-            config
-                .append_author(author.clone(), Some(config_path.clone()))
-                .unwrap();
+            config.authors.push(author.clone());
 
-            // Ensure in-memory representation was updated
-            assert_eq!(config.authors.len(), 1);
-            assert_eq!(&config.authors[0], &author);
-
-            // Verify the config was modified correctly
-            insta::assert_yaml_snapshot!(config);
-
-            // Verify formatting wasn't changed
-            let config_string = fs::read_to_string(config_path).unwrap();
-            assert!(config_string.contains("# First scanner"));
-            assert!(config_string.contains("source_flatbed =  \"Flatbed\" # Double space"));
-        }
-
-        #[test]
-        fn append_document_type() {
-            // Write a minimal valid config
-            let temp_dir = TempDir::new().unwrap();
-            let config_path = temp_dir.path().join("config.toml");
-            let config_content = r#"
-outdir = "/tmp/archive"
-
-[[scanners]]
-id = "test_scanner"
-device_name = "test:scanner:device"
-source_flatbed =  "Flatbed" # Scanner source
-
-[[authors]]
-# A sample author
-name = "Musterfirma"
-directory =  "musterfirma" # Author directory
-"#;
-            fs::write(&config_path, config_content).unwrap();
-
-            // Load and modify config
-            let mut config = Config::load_from_path(&config_path).unwrap();
+            // Add a document type to the author
             let document_type = DocumentType {
                 name: "Invoice".into(),
                 include_keywords: vec![],
@@ -609,28 +415,22 @@ directory =  "musterfirma" # Author directory
                 pdf_date_regex: None,
                 pdf_keywords: vec![],
             };
-            let author_name = config.authors[0].name.clone();
-            config
-                .append_document_type(
-                    &author_name,
-                    document_type.clone(),
-                    Some(config_path.clone()),
-                )
-                .unwrap();
+            config.authors[0].document_types.push(document_type.clone());
 
-            // Ensure in-memory representation was updated
-            assert_eq!(config.authors[0].document_types.len(), 1);
-            assert_eq!(&config.authors[0].document_types[0], &document_type);
+            // Save the config
+            config.save(Some(&config_path)).unwrap();
 
-            // Verify the config was modified correctly
-            insta::assert_yaml_snapshot!("append_document_type_parsed", config);
+            // Verify a backup was created
+            let backup_path = config_path.with_extension("yml~");
+            assert!(backup_path.exists());
 
-            // Verify formatting wasn't changed
+            // Load the config again and verify it was saved correctly
+            let loaded_config = Config::load_from_path(&config_path).unwrap();
+            assert_eq!(config, loaded_config);
+
+            // Snapshot format used for writing config
             let config_string = fs::read_to_string(config_path).unwrap();
-            insta::assert_snapshot!("append_document_type_raw", config_string);
-            assert!(config_string.contains("source_flatbed =  \"Flatbed\" # Scanner source"));
-            assert!(config_string.contains("# A sample author"));
-            assert!(config_string.contains("directory =  \"musterfirma\" # Author directory"));
+            insta::assert_snapshot!(config_string);
         }
     }
 }

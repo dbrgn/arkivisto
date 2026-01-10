@@ -334,9 +334,10 @@ fn create_author(config: &mut Config) -> Result<Author> {
         document_types: Vec::new(),
     };
 
+    config.authors.push(author.clone());
     config
-        .append_author(author.clone(), None)
-        .context("Failed to append new author to config")?;
+        .save(None)
+        .context("Failed to save new author to config")?;
     println!("Author successfully added to config file!");
 
     Ok(author)
@@ -495,9 +496,12 @@ fn create_document_type(config: &mut Config, author: &Author) -> Result<Document
     };
 
     // Add to config
+    if let Some(author_in_config) = config.authors.iter_mut().find(|a| a.name == author.name) {
+        author_in_config.document_types.push(document_type.clone());
+    }
     config
-        .append_document_type(&author.name, document_type.clone(), None)
-        .context("Failed to append new document type to config")?;
+        .save(None)
+        .context("Failed to save new document type to config")?;
     println!("Document type successfully added to config file!");
 
     Ok(document_type)

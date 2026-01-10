@@ -3,6 +3,9 @@ source: src/config.rs
 expression: config
 ---
 outdir: /tmp/foo
+tools:
+  ocrmypdf:
+    language: eng
 scanners:
   - id: brother
     device_name: "brother3:net1;dev0"
@@ -11,6 +14,3 @@ scanners:
     source_adf_duplex: ~
     source_flatbed: FlatBed
 authors: []
-tools:
-  ocrmypdf:
-    language: eng
