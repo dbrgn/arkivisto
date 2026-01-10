@@ -62,12 +62,12 @@ pub struct DocumentType {
     /// Directory name for this document type's files (relative to author dir, or an absolute path)
     #[serde(default)]
     pub directory: String,
-    /// Regex pattern to extract subject from OCR text
+    /// Regex pattern to extract title from OCR text
     #[serde(default)]
-    pub pdf_subject_regex: Option<String>,
-    /// Replacement pattern for subject (can use regex capture groups)
+    pub pdf_title_regex: Option<String>,
+    /// Replacement pattern for title (can use regex capture groups)
     #[serde(default)]
-    pub pdf_subject_pattern: Option<String>,
+    pub pdf_title_pattern: Option<String>,
     /// Regex pattern to limit date search to a specific region of OCR text
     #[serde(default)]
     pub pdf_date_regex: Option<String>,

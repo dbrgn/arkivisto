@@ -1,7 +1,7 @@
 //! Archive module for organizing and storing processed documents.
 //!
 //! This module handles the final step of the document workflow: assigning metadata
-//! to processed PDFs (author, document type, subject, date, keywords), embedding
+//! to processed PDFs (author, document type, title, date, keywords), embedding
 //! that metadata into the PDF, and moving the final file to an organized directory
 //! structure.
 
@@ -191,18 +191,18 @@ impl OcrText {
             .collect()
     }
 
-    /// Extract a subject using a regex pattern and replacement pattern.
+    /// Extract a title using a regex pattern and replacement pattern.
     ///
     /// If both `regex` and `pattern` are provided, the regex is searched in the text
     /// and the pattern is used as a replacement (supporting capture groups).
-    pub fn extract_subject(&self, regex: Option<&str>, pattern: Option<&str>) -> Option<String> {
+    pub fn extract_title(&self, regex: Option<&str>, pattern: Option<&str>) -> Option<String> {
         let regex_str = regex?;
         let pattern_str = pattern?;
 
         let re = match Regex::new(regex_str) {
             Ok(r) => r,
             Err(e) => {
-                warn!("Invalid subject regex '{}': {}", regex_str, e);
+                warn!("Invalid title regex '{}': {}", regex_str, e);
                 return None;
             }
         };
@@ -213,7 +213,7 @@ impl OcrText {
             let result = re.replace(matched.as_str(), pattern_str);
             Some(result.into_owned())
         } else {
-            warn!("Subject regex did not match: {}", regex_str);
+            warn!("Title regex did not match: {}", regex_str);
             None
         }
     }
@@ -384,8 +384,8 @@ pub fn select_document_type(
             include_keywords: Vec::new(),
             exclude_keywords: Vec::new(),
             directory: String::new(),
-            pdf_subject_regex: None,
-            pdf_subject_pattern: None,
+            pdf_title_regex: None,
+            pdf_title_pattern: None,
             pdf_date_regex: None,
             pdf_keywords: Vec::new(),
         });
@@ -445,24 +445,24 @@ fn create_document_type(config: &mut Config, author: &Author) -> Result<Document
         .trim()
         .to_string();
 
-    let pdf_subject_regex = inquire::Text::new("PDF subject regex (leave empty for none):")
+    let pdf_title_regex = inquire::Text::new("PDF title regex (leave empty for none):")
         .prompt()?
         .trim()
         .to_string();
-    let pdf_subject_regex = if pdf_subject_regex.is_empty() {
+    let pdf_title_regex = if pdf_title_regex.is_empty() {
         None
     } else {
-        Some(pdf_subject_regex)
+        Some(pdf_title_regex)
     };
 
-    let pdf_subject_pattern = inquire::Text::new("PDF subject pattern (leave empty for none):")
+    let pdf_title_pattern = inquire::Text::new("PDF title pattern (leave empty for none):")
         .prompt()?
         .trim()
         .to_string();
-    let pdf_subject_pattern = if pdf_subject_pattern.is_empty() {
+    let pdf_title_pattern = if pdf_title_pattern.is_empty() {
         None
     } else {
-        Some(pdf_subject_pattern)
+        Some(pdf_title_pattern)
     };
 
     let pdf_date_regex = inquire::Text::new("PDF date regex (leave empty for none):")
@@ -489,8 +489,8 @@ fn create_document_type(config: &mut Config, author: &Author) -> Result<Document
         include_keywords,
         exclude_keywords,
         directory,
-        pdf_subject_regex,
-        pdf_subject_pattern,
+        pdf_title_regex,
+        pdf_title_pattern,
         pdf_date_regex,
         pdf_keywords,
     };
@@ -507,23 +507,23 @@ fn create_document_type(config: &mut Config, author: &Author) -> Result<Document
     Ok(document_type)
 }
 
-/// Prompt user to enter or confirm the document subject.
-pub fn get_subject(document_type: &DocumentType, ocr_text: &OcrText) -> Result<String> {
-    // Try to extract subject from regex pattern
-    let default_subject = ocr_text
-        .extract_subject(
-            document_type.pdf_subject_regex.as_deref(),
-            document_type.pdf_subject_pattern.as_deref(),
+/// Prompt user to enter or confirm the document title.
+pub fn get_title(document_type: &DocumentType, ocr_text: &OcrText) -> Result<String> {
+    // Try to extract title from regex pattern
+    let default_title = ocr_text
+        .extract_title(
+            document_type.pdf_title_regex.as_deref(),
+            document_type.pdf_title_pattern.as_deref(),
         )
-        .or_else(|| document_type.pdf_subject_pattern.clone())
+        .or_else(|| document_type.pdf_title_pattern.clone())
         .unwrap_or_default();
 
-    let subject = inquire::Text::new("Subject:")
-        .with_default(&default_subject)
+    let title = inquire::Text::new("Document title:")
+        .with_default(&default_title)
         .with_validator(|input: &str| {
             if input.trim().is_empty() {
                 Ok(inquire::validator::Validation::Invalid(
-                    "Subject cannot be empty".into(),
+                    "Title cannot be empty".into(),
                 ))
             } else {
                 Ok(inquire::validator::Validation::Valid)
@@ -531,7 +531,7 @@ pub fn get_subject(document_type: &DocumentType, ocr_text: &OcrText) -> Result<S
         })
         .prompt()?;
 
-    Ok(subject)
+    Ok(title)
 }
 
 /// Prompt user to enter or confirm the document date.
@@ -597,19 +597,19 @@ pub fn get_keywords(
     Ok(keywords)
 }
 
-/// Generate a sanitized filename from subject and date.
+/// Generate a sanitized filename from title and date.
 ///
-/// Format: `{date}-{subject}.pdf`
+/// Format: `{date}-{title}.pdf`
 ///
 /// Sanitization rules:
 /// - Lowercase
 /// - Spaces and slashes replaced with hyphens
 /// - German umlauts converted: ae, oe, ue
 /// - Multiple hyphens collapsed
-pub fn generate_filename(subject: &str, date: NaiveDate) -> String {
+pub fn generate_filename(title: &str, date: NaiveDate) -> String {
     let date_str = date.format("%Y-%m-%d").to_string();
 
-    let mut filename = format!("{}-{}.pdf", date_str, subject);
+    let mut filename = format!("{}-{}.pdf", date_str, title);
 
     // Lowercase
     filename = filename.to_lowercase();
@@ -777,7 +777,7 @@ pub fn find_archivable_document_dirs(scans_dir: &Path) -> Result<Vec<PathBuf>> {
 /// 1. Read OCR text from sidecar file
 /// 2. Create preview PDF
 /// 3. Select author and document type
-/// 4. Extract/confirm subject and date
+/// 4. Extract/confirm title and date
 /// 5. Collect keywords
 /// 6. Generate filename and output path
 /// 7. Embed metadata and save to final location
@@ -847,8 +847,8 @@ pub fn archive_document(config: &mut Config, document_dir: &Path, scans_dir: &Pa
     // Select document type
     let document_type = select_document_type(config, &author, &ocr_text)?;
 
-    // Get subject
-    let subject = get_subject(&document_type, &ocr_text)?;
+    // Get title
+    let title = get_title(&document_type, &ocr_text)?;
 
     // Get date
     let date = get_date(&document_type, &ocr_text)?;
@@ -861,12 +861,12 @@ pub fn archive_document(config: &mut Config, document_dir: &Path, scans_dir: &Pa
     )?;
 
     // Generate filename and path
-    let filename = generate_filename(&subject, date);
+    let filename = generate_filename(&title, date);
     let output_path = build_output_path(config, &author, &document_type, &filename);
 
     // Prepare metadata
     let metadata = PdfMetadata {
-        title: subject,
+        title,
         author: author.name.clone(),
         creator: author.name.clone(),
         create_date: date,
