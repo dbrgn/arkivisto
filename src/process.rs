@@ -7,14 +7,14 @@ use std::{
 use anyhow::{Context, Result, anyhow};
 use indicatif::{ProgressBar, ProgressFinish, ProgressStyle};
 use regex::Regex;
-use tracing::{debug, warn};
+use tracing::{debug, trace, warn};
 
 use crate::common::{self, CheckDependencyResult};
 
 static DATE_TIME_REGEX: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
 
-/// OCRmyPDF Docker image version
-static OCRMYPDF_VERSION: &str = "v16.13.0";
+/// OCRmyPDF Docker image and version
+static OCRMYPDF_IMAGE: &str = "docker.io/jbarlow83/ocrmypdf:v16.13.0";
 
 /// Special filenames used during document processing
 mod filenames {
@@ -46,6 +46,45 @@ mod commands {
 
 pub fn check_dependencies() -> CheckDependencyResult {
     common::check_dependencies(&[commands::MAGICK, commands::TIFFCP, commands::DOCKER])
+}
+
+/// Prepare dependencies by ensuring the required Docker image is available.
+///
+/// This function checks if the OCRmyPDF Docker image exists locally and pulls
+/// it if necessary.
+pub fn prepare_dependencies() -> Result<()> {
+    // Check if Docker image exists locally
+    trace!("Checking for Docker image {OCRMYPDF_IMAGE}");
+    let output = Command::new(commands::DOCKER.bin)
+        .arg("image")
+        .arg("inspect")
+        .arg(OCRMYPDF_IMAGE)
+        .output()
+        .context("Failed to run `docker image inspect` command")?;
+    if output.status.success() {
+        debug!("Docker image {OCRMYPDF_IMAGE} already exists locally");
+        return Ok(());
+    }
+
+    // Image doesn't exist, pull it
+    println!("Fetching Docker image {OCRMYPDF_IMAGE}");
+    let output = Command::new(commands::DOCKER.bin)
+        .arg("pull")
+        .arg(OCRMYPDF_IMAGE)
+        .output()
+        .context("Failed to run `docker pull` command")?;
+
+    if !output.status.success() {
+        warn!(
+            "docker pull failed with status {}. Stderr: {}",
+            output.status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&output.stderr),
+        );
+        return Err(anyhow!("Failed to pull Docker image {OCRMYPDF_IMAGE}"));
+    }
+
+    debug!("Successfully pulled Docker image {OCRMYPDF_IMAGE}");
+    Ok(())
 }
 
 /// Return iterator over unprocessed document directories.
@@ -215,7 +254,6 @@ pub fn process_document(
     progress.inc(1);
 
     // Run OCR and other postprocessing
-    // TODO: Download docker image at setup time
     progress.set_message("Running OCR and generating PDF/A");
     let output = Command::new(commands::DOCKER.bin)
         .arg("run")
@@ -227,7 +265,7 @@ pub fn process_document(
                 .to_str()
                 .context("Failed to convert directory path to string")?
         ))
-        .arg(format!("docker.io/jbarlow83/ocrmypdf:{OCRMYPDF_VERSION}"))
+        .arg(OCRMYPDF_IMAGE)
         .arg(
             Path::new("/document/").join(
                 pdf_out

@@ -74,6 +74,11 @@ fn main() -> Result<()> {
         std::process::exit(1);
     }
 
+    // Prepare dependencies
+    if matches!(args.mode, Mode::Single | Mode::Process) {
+        process::prepare_dependencies()?;
+    }
+
     // Act depending on mode
     match args.mode {
         Mode::Single => {
