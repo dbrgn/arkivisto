@@ -2,10 +2,55 @@ use std::{path::PathBuf, process::Command, time::Duration};
 
 use anyhow::{Context, Result};
 use indicatif::ProgressBar;
-use inquire::{Confirm, Select, Text};
+use inquire::{Confirm, MultiSelect, Select, Text};
 use tracing::trace;
 
-use crate::config::{Config, Scanner, Tools};
+use crate::config::{Config, OcrmypdfConfig, Scanner, Tools};
+
+/// OCR language option
+#[derive(Debug, Clone)]
+struct OcrLanguage {
+    name: &'static str,
+    code: &'static str,
+}
+
+impl std::fmt::Display for OcrLanguage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+/// List of OCR languages supported by the OCRmyPDF docker image
+const OCR_LANGUAGES: &[OcrLanguage] = &[
+    OcrLanguage {
+        name: "English",
+        code: "eng",
+    },
+    OcrLanguage {
+        name: "Chinese (Simplified)",
+        code: "chi-sim",
+    },
+    OcrLanguage {
+        name: "German",
+        code: "deu",
+    },
+    OcrLanguage {
+        name: "French",
+        code: "fra",
+    },
+    OcrLanguage {
+        name: "Portuguese",
+        code: "por",
+    },
+    OcrLanguage {
+        name: "Spanish",
+        code: "spa",
+    },
+    OcrLanguage {
+        name: "Orientation and script detection",
+        code: "osd",
+    },
+];
 
 /// A scanner detected by `scanimage -L`
 #[derive(Debug, serde::Serialize)]
@@ -46,7 +91,7 @@ pub fn run_init_config() -> Result<()> {
     // Detect scanners
     let detected_scanners = detect_scanners()?;
     if detected_scanners.is_empty() {
-        println!("No scanners detected.");
+        println!("No scanners detected. Please ensure your scanners are turned on and accessible.");
         return Ok(());
     }
 
@@ -91,10 +136,31 @@ pub fn run_init_config() -> Result<()> {
         output_directory = Some(path);
     }
 
+    // Ask for OCR languages
+    let ocr_languages = {
+        let choices = MultiSelect::new(
+            "Which languages do you want to support with OCR?",
+            OCR_LANGUAGES.to_vec(),
+        )
+        .with_default(&[0])
+        .with_validator(inquire::min_length!(1, "Please select at least one option"))
+        .prompt()?;
+
+        choices
+            .iter()
+            .map(|lang| lang.code)
+            .collect::<Vec<_>>()
+            .join("+")
+    };
+
     // Create config struct
     let config = Config {
         output_directory: output_directory.expect("Output directory is None"),
-        tools: Tools::default(),
+        tools: Tools {
+            ocrmypdf: OcrmypdfConfig {
+                language: ocr_languages,
+            },
+        },
         scanners,
         authors: vec![],
     };
@@ -106,6 +172,7 @@ pub fn run_init_config() -> Result<()> {
     for scanner in &config.scanners {
         println!("  - {}", scanner.name);
     }
+    println!("  OCR languages: {:?}", &config.tools.ocrmypdf.language);
 
     // Save
     config.save(None)?;
