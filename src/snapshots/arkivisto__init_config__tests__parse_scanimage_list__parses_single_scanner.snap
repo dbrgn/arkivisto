@@ -1,0 +1,6 @@
+---
+source: src/init_config.rs
+expression: result
+---
+- device_name: "brother4:net1;dev0"
+  description: Brother *brother-mfc9330cdw MFC-9330CDW

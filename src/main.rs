@@ -11,6 +11,7 @@ mod args;
 mod common;
 mod config;
 mod fs_utils;
+mod init_config;
 mod process;
 mod scan;
 
@@ -38,6 +39,28 @@ fn main() -> Result<()> {
     // Initialize tracing
     initialize_tracing(args.log_level.to_filter())?;
 
+    // Check dependencies on external commands
+    let mut check_dependency_result = CheckDependencyResult::AllAvailable;
+    if matches!(args.mode, Mode::Single | Mode::Process) {
+        check_dependency_result.merge(process::check_dependencies());
+    }
+    if matches!(args.mode, Mode::Single | Mode::Scan | Mode::InitConfig) {
+        check_dependency_result.merge(scan::check_dependencies());
+    }
+    if let CheckDependencyResult::SomeMissing(missing) = check_dependency_result {
+        eprintln!("Error: Missing system dependencies:");
+        for dep in &missing {
+            eprintln!("  - {} (part of {})", dep.bin, dep.name);
+        }
+        std::process::exit(1);
+    }
+
+    // Handle init-config mode before loading config (config may not exist yet)
+    if matches!(args.mode, Mode::InitConfig) {
+        init_config::run_init_config()?;
+        return Ok(());
+    }
+
     // Load config (mutable for archive mode to add new authors/document types)
     let mut config = config::Config::load()?;
 
@@ -50,7 +73,10 @@ fn main() -> Result<()> {
     let get_scan_context = || -> Result<scan::ScanContext> {
         // Select scan device
         let scanner = scan::select_scanner(&config.scanners)?;
-        debug!("Selected scanner: {} ({})", scanner.id, scanner.device_name);
+        debug!(
+            "Selected scanner: {} ({})",
+            scanner.name, scanner.device_name
+        );
 
         Ok(scan::ScanContext {
             scanner,
@@ -58,22 +84,6 @@ fn main() -> Result<()> {
             fake_scan: args.fake_scan,
         })
     };
-
-    // Check dependencies on external commands
-    let mut check_dependency_result = CheckDependencyResult::AllAvailable;
-    if matches!(args.mode, Mode::Single | Mode::Process) {
-        check_dependency_result.merge(process::check_dependencies());
-    }
-    if matches!(args.mode, Mode::Single | Mode::Scan) {
-        check_dependency_result.merge(scan::check_dependencies());
-    }
-    if let CheckDependencyResult::SomeMissing(missing) = check_dependency_result {
-        eprintln!("Error: Missing system dependencies:");
-        for dep in &missing {
-            eprintln!("  - {} (part of {})", dep.bin, dep.name);
-        }
-        std::process::exit(1);
-    }
 
     // Prepare dependencies
     if matches!(args.mode, Mode::Single | Mode::Process) {
@@ -127,6 +137,10 @@ fn main() -> Result<()> {
                         .context("Failed to archive document")?;
                 }
             }
+        }
+        Mode::InitConfig => {
+            // This is unreachable because InitConfig is handled earlier before config loading
+            unreachable!("InitConfig mode should have been handled before config loading");
         }
     }
 

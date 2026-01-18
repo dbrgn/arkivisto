@@ -7,7 +7,7 @@ tools:
   ocrmypdf:
     language: eng
 scanners:
-  - id: test_scanner
+  - name: Test Scanner
     device_name: "test:scanner:device"
     source_adf_single: ADF
     source_flatbed: Flatbed

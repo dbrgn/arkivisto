@@ -45,6 +45,7 @@ pub enum Mode {
     Archive,
     #[default]
     Single,
+    InitConfig,
 }
 
 #[derive(Parser, Debug)]

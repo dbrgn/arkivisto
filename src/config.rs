@@ -125,8 +125,8 @@ impl Display for DocumentType {
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Scanner {
-    /// Identifier
-    pub id: String,
+    /// Human-readable name of the scanner
+    pub name: String,
 
     /// Name of the scanner as indicated by SANE (e.g. "airscan:e1:HP ScanJet Flow N7000 snw1")
     ///
@@ -165,7 +165,7 @@ impl Scanner {
         {
             anyhow::bail!(
                 "Scanner '{}' must have at least one scan source configured (source_adf_single, source_adf_duplex, or source_flatbed)",
-                self.id
+                self.name
             );
         }
         Ok(())
@@ -174,13 +174,13 @@ impl Scanner {
 
 impl Display for Scanner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} ({})", self.id, self.device_name)
+        write!(f, "{}", self.name)
     }
 }
 
 impl Config {
     /// Get the path to the config file
-    fn config_path() -> Result<PathBuf> {
+    pub fn config_path() -> Result<PathBuf> {
         let config_dir = app_dirs::app_root(app_dirs::AppDataType::UserConfig, &super::APP_INFO)
             .context("Could not determine XDG app config directory")?;
         Ok(config_dir.join("config.yml"))
@@ -280,7 +280,7 @@ mod tests {
 outdir: /tmp/foo
 
 scanners:
-  - id: brother
+  - name: Brother MFC
     device_name: "brother3:net1;dev0"
     source_adf_single: Automatic Document Feeder(centrally aligned)
     source_flatbed: FlatBed
@@ -301,7 +301,7 @@ scanners:
 outdir: /tmp/archive
 
 scanners:
-  - id: test_scanner
+  - name: Test Scanner
     device_name: "test:scanner:device"
     source_flatbed: Flatbed
     source_adf_single: ADF
@@ -321,7 +321,7 @@ scanners:
         #[test]
         fn scanner_without_sources_fails_validation() {
             let scanner = Scanner {
-                id: "test".to_string(),
+                name: "Test Scanner".to_string(),
                 device_name: "test:device".to_string(),
                 additional_args: vec![],
                 source_adf_single: None,
@@ -342,7 +342,7 @@ scanners:
         #[test]
         fn scanner_with_one_source_passes_validation() {
             let scanner = Scanner {
-                id: "test".to_string(),
+                name: "Test Scanner".to_string(),
                 device_name: "test:device".to_string(),
                 additional_args: vec![],
                 source_adf_single: Some("ADF".to_string()),
@@ -362,7 +362,7 @@ scanners:
 outdir: /tmp/archive
 
 scanners:
-  - id: test_scanner
+  - name: Test Scanner
     device_name: "test:scanner:device"
 "#;
             fs::write(&config_path, config_content).unwrap();
@@ -386,7 +386,7 @@ outdir: /tmp/archive
 
 # Scanner configuration
 scanners:
-  - id: test_scanner
+  - name: Test Scanner
     device_name: "test:scanner:device"
     source_flatbed: Flatbed
 "#;
