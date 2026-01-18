@@ -169,6 +169,7 @@ impl OcrText {
             }
         }
 
+        tracing::trace!(?include, ?exclude, "OcrText mext matches",);
         true
     }
 
@@ -227,6 +228,41 @@ impl AsRef<str> for OcrText {
     }
 }
 
+/// Build author selection options and determine default selection index.
+///
+/// Returns a tuple of (options, default_index) where:
+/// - options is a list of display strings for the selection menu
+/// - default_index is the suggested cursor position (0-based)
+fn build_author_options(config: &Config, ocr_text: &OcrText) -> (Vec<String>, usize) {
+    let mut matching = ocr_text.matching_authors(&config.authors);
+
+    // Build options list
+    let mut options: Vec<String> = Vec::new();
+    options.push("Skip this document".to_string());
+    options.push("Create new author".to_string());
+
+    // Add matching authors first (sorted by name)
+    matching.sort_by_key(|author| author.name.to_lowercase());
+    for author in &matching {
+        options.push(format!("{} (matched)", author.name));
+    }
+
+    // Add non-matching authors (sorted by name)
+    let mut non_matching_authors = config
+        .authors
+        .iter()
+        .filter(|author| !matching.contains(author))
+        .map(|author| author.name.clone())
+        .collect::<Vec<_>>();
+    non_matching_authors.sort_by_key(|name| name.to_lowercase());
+    options.extend_from_slice(&non_matching_authors);
+
+    // Determine default selection
+    let default_index = if !matching.is_empty() { 2 } else { 0 };
+
+    (options, default_index)
+}
+
 /// Prompt user to select an author from the list of authors.
 ///
 /// Matching authors (based on OCR text) are shown first. The user can also
@@ -234,27 +270,7 @@ impl AsRef<str> for OcrText {
 ///
 /// Returns `None` if the user chooses to skip the document.
 pub fn select_author(config: &mut Config, ocr_text: &OcrText) -> Result<Option<Author>> {
-    let matching = ocr_text.matching_authors(&config.authors);
-
-    // Build options list
-    let mut options: Vec<String> = Vec::new();
-    options.push("Skip this document".to_string());
-    options.push("Create new author".to_string());
-
-    // Add matching authors first
-    for author in &matching {
-        options.push(format!("{} (matched)", author.name));
-    }
-
-    // Add non-matching authors
-    for author in &config.authors {
-        if !matching.iter().any(|m| m.name == author.name) {
-            options.push(author.name.clone());
-        }
-    }
-
-    // Determine default selection
-    let default_index = if !matching.is_empty() { 2 } else { 0 };
+    let (options, default_index) = build_author_options(config, ocr_text);
 
     let selection = inquire::Select::new("Select author:", options)
         .with_starting_cursor(default_index)
@@ -950,6 +966,8 @@ pub fn archive_document(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
 
     mod ocr_text {
@@ -1070,6 +1088,154 @@ mod tests {
                 let text = OcrText::new("HELLO world TeSt");
                 assert!(text.matches_keywords(&["Hello".to_string(), "WORLD".to_string()], &[]));
             }
+        }
+    }
+
+    mod build_author_options {
+        use super::*;
+
+        fn make_author(name: &str, include_keywords: Vec<&str>) -> Author {
+            Author {
+                name: name.to_string(),
+                include_keywords: include_keywords.iter().map(|s| s.to_string()).collect(),
+                exclude_keywords: vec![],
+                directory: name.replace(' ', "_"),
+                pdf_keywords: HashSet::new(),
+                document_types: vec![],
+            }
+        }
+
+        fn make_config(authors: Vec<Author>) -> Config {
+            Config {
+                output_directory: "/tmp/output".into(),
+                tools: crate::config::Tools::default(),
+                scanners: vec![],
+                authors,
+            }
+        }
+
+        #[test]
+        fn no_authors_defaults_to_skip() {
+            let config = make_config(vec![]);
+            let ocr_text = OcrText::new("Some text");
+
+            let (options, default_index) = build_author_options(&config, &ocr_text);
+
+            assert_eq!(options, vec!["Skip this document", "Create new author"]);
+            assert_eq!(default_index, 0);
+        }
+
+        #[test]
+        fn no_matching_authors_defaults_to_skip() {
+            let config = make_config(vec![
+                make_author("Alice", vec!["alice"]),
+                make_author("Bob", vec!["bob"]),
+            ]);
+            let ocr_text = OcrText::new("Some unrelated text");
+
+            let (options, default_index) = build_author_options(&config, &ocr_text);
+
+            assert_eq!(
+                options,
+                vec!["Skip this document", "Create new author", "Alice", "Bob"]
+            );
+            assert_eq!(default_index, 0);
+        }
+
+        #[test]
+        fn single_matching_author_defaults_to_match() {
+            let config = make_config(vec![
+                make_author("Alice", vec!["alice"]),
+                make_author("Bob", vec!["bob"]),
+            ]);
+            let ocr_text = OcrText::new("This is from alice");
+
+            let (options, default_index) = build_author_options(&config, &ocr_text);
+
+            assert_eq!(
+                options,
+                vec![
+                    "Skip this document",
+                    "Create new author",
+                    "Alice (matched)",
+                    "Bob"
+                ]
+            );
+            assert_eq!(default_index, 2);
+        }
+
+        #[test]
+        fn multiple_matching_authors_sorted_alphabetically() {
+            let config = make_config(vec![
+                make_author("Zara", vec!["company"]),
+                make_author("Alice", vec!["company"]),
+                make_author("Bob", vec!["bob"]),
+            ]);
+            let ocr_text = OcrText::new("Letter from company");
+
+            let (options, default_index) = build_author_options(&config, &ocr_text);
+
+            assert_eq!(
+                options,
+                vec![
+                    "Skip this document",
+                    "Create new author",
+                    "Alice (matched)",
+                    "Zara (matched)",
+                    "Bob"
+                ]
+            );
+            assert_eq!(default_index, 2);
+        }
+
+        #[test]
+        fn non_matching_authors_sorted_alphabetically() {
+            let config = make_config(vec![
+                make_author("Zara", vec!["zara"]),
+                make_author("Alice", vec!["company"]),
+                make_author("Bob", vec!["bob"]),
+                make_author("Charlie", vec!["charlie"]),
+            ]);
+            let ocr_text = OcrText::new("Letter from company");
+
+            let (options, default_index) = build_author_options(&config, &ocr_text);
+
+            assert_eq!(
+                options,
+                vec![
+                    "Skip this document",
+                    "Create new author",
+                    "Alice (matched)",
+                    "Bob",
+                    "Charlie",
+                    "Zara"
+                ]
+            );
+            assert_eq!(default_index, 2);
+        }
+
+        #[test]
+        fn case_insensitive_sorting() {
+            let config = make_config(vec![
+                make_author("zara", vec!["zara"]),
+                make_author("Alice", vec!["alice"]),
+                make_author("bob", vec!["bob"]),
+            ]);
+            let ocr_text = OcrText::new("Some text");
+
+            let (options, default_index) = build_author_options(&config, &ocr_text);
+
+            assert_eq!(
+                options,
+                vec![
+                    "Skip this document",
+                    "Create new author",
+                    "Alice",
+                    "bob",
+                    "zara"
+                ]
+            );
+            assert_eq!(default_index, 0);
         }
     }
 
