@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fmt::Display,
     fs,
     path::{Path, PathBuf},
@@ -73,7 +74,7 @@ pub struct Author {
     pub directory: String,
     /// Keywords to embed in PDF metadata for this author
     #[serde(default)]
-    pub pdf_keywords: Vec<String>,
+    pub pdf_keywords: HashSet<String>,
     /// Document types for this author
     #[serde(default)]
     pub document_types: Vec<DocumentType>,
@@ -113,7 +114,7 @@ pub struct DocumentType {
     pub pdf_date_regex: Option<String>,
     /// Additional keywords to embed in PDF metadata for this document type
     #[serde(default)]
-    pub pdf_keywords: Vec<String>,
+    pub pdf_keywords: HashSet<String>,
 }
 
 impl Display for DocumentType {
@@ -399,7 +400,7 @@ scanners:
                 include_keywords: vec![],
                 exclude_keywords: vec![],
                 directory: "musterfirma".into(),
-                pdf_keywords: vec![],
+                pdf_keywords: HashSet::new(),
                 document_types: vec![],
             };
             config.authors.push(author.clone());
@@ -413,7 +414,7 @@ scanners:
                 pdf_title_regex: None,
                 pdf_title_pattern: None,
                 pdf_date_regex: None,
-                pdf_keywords: vec![],
+                pdf_keywords: HashSet::new(),
             };
             config.authors[0].document_types.push(document_type.clone());
 

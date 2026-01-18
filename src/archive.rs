@@ -6,6 +6,7 @@
 //! structure.
 
 use std::{
+    collections::HashSet,
     fs,
     path::{Path, PathBuf},
 };
@@ -319,7 +320,7 @@ fn create_author(config: &mut Config) -> Result<Author> {
     let pdf_keywords_str = inquire::Text::new("PDF keywords (comma-separated):")
         .with_default(&default_keywords)
         .prompt()?;
-    let pdf_keywords: Vec<String> = pdf_keywords_str
+    let pdf_keywords: HashSet<String> = pdf_keywords_str
         .split(',')
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
@@ -387,7 +388,7 @@ pub fn select_document_type(
             pdf_title_regex: None,
             pdf_title_pattern: None,
             pdf_date_regex: None,
-            pdf_keywords: Vec::new(),
+            pdf_keywords: HashSet::new(),
         });
     }
 
@@ -478,7 +479,7 @@ fn create_document_type(config: &mut Config, author: &Author) -> Result<Document
     let pdf_keywords_str = inquire::Text::new("PDF keywords (comma-separated):")
         .with_default(&default_keywords)
         .prompt()?;
-    let pdf_keywords: Vec<String> = pdf_keywords_str
+    let pdf_keywords: HashSet<String> = pdf_keywords_str
         .split(',')
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
@@ -571,15 +572,13 @@ pub fn get_date(document_type: &DocumentType, ocr_text: &OcrText) -> Result<Naiv
 }
 
 /// Collect all PDF keywords from author and document type.
-pub fn get_keywords(
-    author: &Author,
-    document_type: &DocumentType,
-    prompt_if_empty: bool,
-) -> Result<Vec<String>> {
-    let mut keywords = Vec::new();
+///
+/// If the document type keywords are empty, then ask user to specify keywords.
+pub fn get_keywords(author: &Author, document_type: &DocumentType) -> Result<HashSet<String>> {
+    let mut keywords = HashSet::new();
 
     // Add document type keywords
-    if document_type.pdf_keywords.is_empty() && prompt_if_empty {
+    if document_type.pdf_keywords.is_empty() {
         let keywords_str = inquire::Text::new("PDF keywords (comma-separated):").prompt()?;
         let user_keywords: Vec<String> = keywords_str
             .split(',')
@@ -854,11 +853,7 @@ pub fn archive_document(config: &mut Config, document_dir: &Path, scans_dir: &Pa
     let date = get_date(&document_type, &ocr_text)?;
 
     // Get keywords
-    let keywords = get_keywords(
-        &author,
-        &document_type,
-        document_type.pdf_keywords.is_empty(),
-    )?;
+    let keywords = get_keywords(&author, &document_type)?;
 
     // Generate filename and path
     let filename = generate_filename(&title, date);
@@ -870,7 +865,7 @@ pub fn archive_document(config: &mut Config, document_dir: &Path, scans_dir: &Pa
         author: author.name.clone(),
         creator: author.name.clone(),
         create_date: date,
-        keywords,
+        keywords: Vec::from_iter(keywords),
     };
 
     // Create output PDF with metadata
