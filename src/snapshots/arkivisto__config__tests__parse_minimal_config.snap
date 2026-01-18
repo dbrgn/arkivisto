@@ -6,6 +6,7 @@ output_directory: /tmp/foo
 tools:
   ocrmypdf:
     language: eng
+  pdf_viewer: xdg-open
 scanners:
   - name: Brother MFC
     device_name: "brother3:net1;dev0"

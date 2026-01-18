@@ -1,5 +1,3 @@
-use std::process::Command;
-
 /// Special filenames used during document processing
 pub mod filenames {
     /// Intermediate combined TIFF file
@@ -47,16 +45,7 @@ impl CheckDependencyResult {
 pub fn check_dependencies(dependencies: &[Dependency]) -> CheckDependencyResult {
     let mut missing = vec![];
     for dependency in dependencies {
-        // Try to spawn the command. `.status()`` returns Err only if the binary cannot be found/executed, not
-        // if it exits with a non-zero code.
-        let exists = Command::new(dependency.bin)
-            .arg("--version")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .stdin(std::process::Stdio::null())
-            .status()
-            .is_ok();
-        if !exists {
+        if which::which(dependency.bin).is_err() {
             missing.push(*dependency);
         }
     }

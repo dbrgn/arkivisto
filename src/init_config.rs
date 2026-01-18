@@ -2,7 +2,6 @@ use std::{path::PathBuf, process::Command, time::Duration};
 
 use anyhow::{Context, Result};
 use indicatif::ProgressBar;
-use inquire::{Confirm, MultiSelect, Select, Text};
 use tracing::trace;
 
 use crate::config::{Config, OcrmypdfConfig, Scanner, Tools};
@@ -52,6 +51,55 @@ const OCR_LANGUAGES: &[OcrLanguage] = &[
     },
 ];
 
+/// PDF viewer option
+#[derive(Debug, Clone)]
+struct PdfViewer {
+    name: &'static str,
+    binary: &'static str,
+}
+
+impl std::fmt::Display for PdfViewer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+/// List of PDF viewer options
+const PDF_VIEWERS: &[PdfViewer] = &[
+    PdfViewer {
+        name: "System default (through xdg-open)",
+        binary: "xdg-open",
+    },
+    PdfViewer {
+        name: "Evince",
+        binary: "evince",
+    },
+    PdfViewer {
+        name: "Okular",
+        binary: "okular",
+    },
+    PdfViewer {
+        name: "Atril",
+        binary: "atril",
+    },
+    PdfViewer {
+        name: "Zathura",
+        binary: "zathura",
+    },
+    PdfViewer {
+        name: "MuPDF",
+        binary: "mupdf",
+    },
+    PdfViewer {
+        name: "Xpdf",
+        binary: "xpdf",
+    },
+    PdfViewer {
+        name: "Foxit Reader",
+        binary: "foxitreader",
+    },
+];
+
 /// A scanner detected by `scanimage -L`
 #[derive(Debug, serde::Serialize)]
 struct DetectedScanner {
@@ -98,7 +146,7 @@ pub fn run_init_config() -> Result<()> {
     // Ask user which scanners to add
     let mut selected_scanners = Vec::new();
     for scanner in detected_scanners {
-        let add = Confirm::new(&format!(
+        let add = inquire::Confirm::new(&format!(
             "Add scanner '{}' ({})?",
             scanner.description, scanner.device_name
         ))
@@ -123,7 +171,7 @@ pub fn run_init_config() -> Result<()> {
     // Ask for output directory
     let mut output_directory: Option<PathBuf> = None;
     while output_directory.is_none() {
-        let path_str = Text::new("Output directory path:").prompt()?;
+        let path_str = inquire::Text::new("Output directory path:").prompt()?;
         let path = PathBuf::from(&path_str);
         if !path.exists() {
             println!("Path {:?} does not exist.", &path);
@@ -138,7 +186,7 @@ pub fn run_init_config() -> Result<()> {
 
     // Ask for OCR languages
     let ocr_languages = {
-        let choices = MultiSelect::new(
+        let choices = inquire::MultiSelect::new(
             "Which languages do you want to support with OCR?",
             OCR_LANGUAGES.to_vec(),
         )
@@ -153,6 +201,18 @@ pub fn run_init_config() -> Result<()> {
             .join("+")
     };
 
+    // Ask for PDF viewer
+    let pdf_viewer = {
+        let filtered_options = PDF_VIEWERS
+            .iter()
+            .filter(|viewer| which::which(viewer.binary).is_ok())
+            .collect::<Vec<_>>();
+        if filtered_options.is_empty() {
+            anyhow::bail!("Could not find any available PDF viewer");
+        }
+        inquire::Select::new("Which PDF viewer do you want to use?", filtered_options).prompt()?
+    };
+
     // Create config struct
     let config = Config {
         output_directory: output_directory.expect("Output directory is None"),
@@ -160,6 +220,7 @@ pub fn run_init_config() -> Result<()> {
             ocrmypdf: OcrmypdfConfig {
                 language: ocr_languages,
             },
+            pdf_viewer: pdf_viewer.binary.to_string(),
         },
         scanners,
         authors: vec![],
@@ -173,6 +234,7 @@ pub fn run_init_config() -> Result<()> {
         println!("  - {}", scanner.name);
     }
     println!("  OCR languages: {:?}", &config.tools.ocrmypdf.language);
+    println!("  PDF viewer: {:?}", &config.tools.pdf_viewer);
 
     // Save
     config.save(None)?;
@@ -333,7 +395,7 @@ fn ask_source_classification(source: &str) -> Result<Option<SourceType>> {
         "Skip (don't use this source)",
     ];
 
-    let answer = Select::new(
+    let answer = inquire::Select::new(
         &format!("How should source '{}' be classified?", source),
         options,
     )
@@ -353,7 +415,7 @@ fn select_source_option(source_type_name: &str, options: Vec<&str>) -> Result<Op
         0 => Ok(None),
         1 => Ok(Some(options[0].to_string())),
         _ => {
-            let answer = Select::new(
+            let answer = inquire::Select::new(
                 &format!(
                     "Multiple {} sources detected. Which one should be used?",
                     source_type_name

@@ -27,11 +27,28 @@ pub struct Config {
 }
 
 /// Configuration for external tools
-#[derive(Debug, Clone, PartialEq, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Tools {
     /// OCRmyPDF configuration
     #[serde(default)]
     pub ocrmypdf: OcrmypdfConfig,
+
+    /// PDF viewer
+    #[serde(default = "default_pdf_viewer")]
+    pub pdf_viewer: String,
+}
+
+impl Default for Tools {
+    fn default() -> Self {
+        Self {
+            ocrmypdf: OcrmypdfConfig::default(),
+            pdf_viewer: default_pdf_viewer(),
+        }
+    }
+}
+
+fn default_pdf_viewer() -> String {
+    "xdg-open".to_string()
 }
 
 /// Configuration for OCRmyPDF
@@ -40,20 +57,15 @@ pub struct OcrmypdfConfig {
     /// Language(s) for OCR (e.g., "eng" or "deu+eng")
     ///
     /// Available languages: eng, chi-sim, deu, fra, osd, por, spa
-    #[serde(default = "default_ocrmypdf_language")]
     pub language: String,
 }
 
 impl Default for OcrmypdfConfig {
     fn default() -> Self {
         Self {
-            language: default_ocrmypdf_language(),
+            language: "eng".to_string(),
         }
     }
-}
-
-fn default_ocrmypdf_language() -> String {
-    "eng".to_string()
 }
 
 /// An author represents a person or organization that documents can be attributed to.
