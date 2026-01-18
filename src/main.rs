@@ -108,7 +108,7 @@ fn main() -> Result<()> {
             let document_dir = scan::scan_document(&scan_context)?;
             process::process_document(&document_dir, &config, None)
                 .context("Failed to post-process document")?;
-            archive::archive_document(&mut config, &document_dir, &scans_dir)
+            archive::archive_document(&mut config, &document_dir, &scans_dir, true)
                 .context("Failed to archive document")?;
         }
         Mode::Scan => {
@@ -142,9 +142,15 @@ fn main() -> Result<()> {
             if document_dirs.is_empty() {
                 println!("No documents ready for archiving.");
             } else {
-                for document_dir in document_dirs {
-                    archive::archive_document(&mut config, &document_dir, &scans_dir)
-                        .context("Failed to archive document")?;
+                for (i, document_dir) in document_dirs.iter().enumerate() {
+                    let offer_preview_open = i == 0;
+                    archive::archive_document(
+                        &mut config,
+                        document_dir,
+                        &scans_dir,
+                        offer_preview_open,
+                    )
+                    .context("Failed to archive document")?;
                 }
             }
         }

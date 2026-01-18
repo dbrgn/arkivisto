@@ -2,7 +2,6 @@ use std::{path::PathBuf, process::Command, time::Duration};
 
 use anyhow::{Context, Result};
 use indicatif::ProgressBar;
-use inquire::{Confirm, MultiSelect, Select, Text};
 use tracing::trace;
 
 use crate::config::{Config, OcrmypdfConfig, Scanner, Tools};
@@ -147,7 +146,7 @@ pub fn run_init_config() -> Result<()> {
     // Ask user which scanners to add
     let mut selected_scanners = Vec::new();
     for scanner in detected_scanners {
-        let add = Confirm::new(&format!(
+        let add = inquire::Confirm::new(&format!(
             "Add scanner '{}' ({})?",
             scanner.description, scanner.device_name
         ))
@@ -172,7 +171,7 @@ pub fn run_init_config() -> Result<()> {
     // Ask for output directory
     let mut output_directory: Option<PathBuf> = None;
     while output_directory.is_none() {
-        let path_str = Text::new("Output directory path:").prompt()?;
+        let path_str = inquire::Text::new("Output directory path:").prompt()?;
         let path = PathBuf::from(&path_str);
         if !path.exists() {
             println!("Path {:?} does not exist.", &path);
@@ -187,7 +186,7 @@ pub fn run_init_config() -> Result<()> {
 
     // Ask for OCR languages
     let ocr_languages = {
-        let choices = MultiSelect::new(
+        let choices = inquire::MultiSelect::new(
             "Which languages do you want to support with OCR?",
             OCR_LANGUAGES.to_vec(),
         )
@@ -211,7 +210,7 @@ pub fn run_init_config() -> Result<()> {
         if filtered_options.is_empty() {
             anyhow::bail!("Could not find any available PDF viewer");
         }
-        Select::new("Which PDF viewer do you want to use?", filtered_options).prompt()?
+        inquire::Select::new("Which PDF viewer do you want to use?", filtered_options).prompt()?
     };
 
     // Create config struct
@@ -396,7 +395,7 @@ fn ask_source_classification(source: &str) -> Result<Option<SourceType>> {
         "Skip (don't use this source)",
     ];
 
-    let answer = Select::new(
+    let answer = inquire::Select::new(
         &format!("How should source '{}' be classified?", source),
         options,
     )
@@ -416,7 +415,7 @@ fn select_source_option(source_type_name: &str, options: Vec<&str>) -> Result<Op
         0 => Ok(None),
         1 => Ok(Some(options[0].to_string())),
         _ => {
-            let answer = Select::new(
+            let answer = inquire::Select::new(
                 &format!(
                     "Multiple {} sources detected. Which one should be used?",
                     source_type_name

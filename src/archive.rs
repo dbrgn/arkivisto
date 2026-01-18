@@ -9,6 +9,7 @@ use std::{
     collections::HashSet,
     fs,
     path::{Path, PathBuf},
+    process::Command,
 };
 
 use anyhow::{Context, Result, anyhow};
@@ -781,7 +782,12 @@ pub fn find_archivable_document_dirs(scans_dir: &Path) -> Result<Vec<PathBuf>> {
 /// 6. Generate filename and output path
 /// 7. Embed metadata and save to final location
 /// 8. Clean up processed directory
-pub fn archive_document(config: &mut Config, document_dir: &Path, scans_dir: &Path) -> Result<()> {
+pub fn archive_document(
+    config: &mut Config,
+    document_dir: &Path,
+    scans_dir: &Path,
+    offer_preview_open: bool,
+) -> Result<()> {
     // Security: Verify document_dir is actually within scans_dir to prevent path traversal
     {
         let document_dir_canonical = document_dir.canonicalize().with_context(|| {
@@ -833,6 +839,24 @@ pub fn archive_document(config: &mut Config, document_dir: &Path, scans_dir: &Pa
     // Create preview
     let preview_path = create_preview(&pdf_path, scans_dir)?;
     println!("Preview available at: {}", preview_path.display());
+
+    // Open preview
+    if offer_preview_open {
+        let open_preview = inquire::Confirm::new(&format!(
+            "Open preview with '{}'?",
+            &config.tools.pdf_viewer,
+        ))
+        .with_default(true)
+        .prompt()?;
+        if open_preview {
+            let spawned = Command::new(&config.tools.pdf_viewer)
+                .arg(&preview_path)
+                .spawn();
+            if spawned.is_err() {
+                eprintln!("Failed to spawn PDF viewer: {:?}", spawned);
+            }
+        }
+    }
 
     // Select author
     let author = match select_author(config, &ocr_text)? {
