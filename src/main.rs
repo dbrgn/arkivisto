@@ -39,7 +39,7 @@ fn main() -> Result<()> {
     initialize_tracing(args.log_level.to_filter())?;
 
     // Load config (mutable for archive mode to add new authors/document types)
-    let mut config = config::Config::load().context("Failed to load config")?;
+    let mut config = config::Config::load()?;
 
     // Determine the XDG cache directory, creating it if it doesn't exist
     // TODO: Should this really be in the cache dir? Or is it better to store files in a more permanent location?

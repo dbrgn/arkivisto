@@ -219,6 +219,7 @@ impl Config {
     pub fn load() -> Result<Self> {
         let config_path = Self::config_path()?;
         Self::load_from_path(&config_path)
+            .context(format!("Failed to load config from {:?}", &config_path))
     }
 
     /// Create backup if file exists
