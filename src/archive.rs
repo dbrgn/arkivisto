@@ -533,21 +533,24 @@ pub fn get_title(document_type: &DocumentType, ocr_text: &OcrText) -> Result<Str
             document_type.pdf_title_regex.as_deref(),
             document_type.pdf_title_pattern.as_deref(),
         )
-        .or_else(|| document_type.pdf_title_pattern.clone())
-        .unwrap_or_default();
+        .or_else(|| document_type.pdf_title_pattern.clone());
 
-    let title = inquire::Text::new("Document title:")
-        .with_default(&default_title)
-        .with_validator(|input: &str| {
-            if input.trim().is_empty() {
-                Ok(inquire::validator::Validation::Invalid(
-                    "Title cannot be empty".into(),
-                ))
-            } else {
-                Ok(inquire::validator::Validation::Valid)
-            }
-        })
-        .prompt()?;
+    let mut prompt = inquire::Text::new("Document title:").with_validator(|input: &str| {
+        if input.trim().is_empty() {
+            Ok(inquire::validator::Validation::Invalid(
+                "Title cannot be empty".into(),
+            ))
+        } else {
+            Ok(inquire::validator::Validation::Valid)
+        }
+    });
+
+    // Only set default if we have a non-empty value
+    if let Some(title) = default_title.as_ref().filter(|s| !s.is_empty()) {
+        prompt = prompt.with_default(title);
+    }
+
+    let title = prompt.prompt()?;
 
     Ok(title)
 }
