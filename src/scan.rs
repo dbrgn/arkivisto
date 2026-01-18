@@ -103,7 +103,11 @@ fn run_scanimage(
     macro_rules! get_source {
         ($field:ident, $desc:expr) => {
             context.scanner.$field.as_ref().ok_or_else(|| {
-                anyhow!("{} not available for scanner {}", $desc, context.scanner.id)
+                anyhow!(
+                    "{} not available for scanner {}",
+                    $desc,
+                    context.scanner.name
+                )
             })
         };
     }

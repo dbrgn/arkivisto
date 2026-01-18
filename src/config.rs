@@ -12,7 +12,7 @@ use tracing::{debug, trace};
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Config {
     /// Default output directory for archived files
-    pub outdir: PathBuf,
+    pub output_directory: PathBuf,
 
     /// Tool-specific configuration
     #[serde(default)]
@@ -70,7 +70,7 @@ pub struct Author {
     /// Keywords that must NOT be present for auto-match (case-insensitive)
     #[serde(default)]
     pub exclude_keywords: Vec<String>,
-    /// Directory name for this author's files (relative to outdir, or an absolute path)
+    /// Directory name for this author's files (relative to output_directory, or an absolute path)
     pub directory: String,
     /// Keywords to embed in PDF metadata for this author
     #[serde(default)]
@@ -125,8 +125,8 @@ impl Display for DocumentType {
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Scanner {
-    /// Identifier
-    pub id: String,
+    /// Human-readable name of the scanner
+    pub name: String,
 
     /// Name of the scanner as indicated by SANE (e.g. "airscan:e1:HP ScanJet Flow N7000 snw1")
     ///
@@ -165,7 +165,7 @@ impl Scanner {
         {
             anyhow::bail!(
                 "Scanner '{}' must have at least one scan source configured (source_adf_single, source_adf_duplex, or source_flatbed)",
-                self.id
+                self.name
             );
         }
         Ok(())
@@ -174,13 +174,13 @@ impl Scanner {
 
 impl Display for Scanner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} ({})", self.id, self.device_name)
+        write!(f, "{}", self.name)
     }
 }
 
 impl Config {
     /// Get the path to the config file
-    fn config_path() -> Result<PathBuf> {
+    pub fn config_path() -> Result<PathBuf> {
         let config_dir = app_dirs::app_root(app_dirs::AppDataType::UserConfig, &super::APP_INFO)
             .context("Could not determine XDG app config directory")?;
         Ok(config_dir.join("config.yml"))
@@ -193,7 +193,7 @@ impl Config {
         // Check if file exists
         if !config_path.exists() {
             anyhow::bail!(
-                "Config file does not exist. Please create a config file at: {}",
+                "Config file not found at: {}\n\nTo generate a config file, run:\n\n    arkivisto init-config",
                 config_path.display()
             );
         }
@@ -277,10 +277,10 @@ mod tests {
     fn parse_minimal_config() {
         let config: Config = serde_saphyr::from_str(
             r#"
-outdir: /tmp/foo
+output_directory: /tmp/foo
 
 scanners:
-  - id: brother
+  - name: Brother MFC
     device_name: "brother3:net1;dev0"
     source_adf_single: Automatic Document Feeder(centrally aligned)
     source_flatbed: FlatBed
@@ -298,10 +298,10 @@ scanners:
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("config.yml");
         let config_content = r#"
-outdir: /tmp/archive
+output_directory: /tmp/archive
 
 scanners:
-  - id: test_scanner
+  - name: Test Scanner
     device_name: "test:scanner:device"
     source_flatbed: Flatbed
     source_adf_single: ADF
@@ -321,7 +321,7 @@ scanners:
         #[test]
         fn scanner_without_sources_fails_validation() {
             let scanner = Scanner {
-                id: "test".to_string(),
+                name: "Test Scanner".to_string(),
                 device_name: "test:device".to_string(),
                 additional_args: vec![],
                 source_adf_single: None,
@@ -342,7 +342,7 @@ scanners:
         #[test]
         fn scanner_with_one_source_passes_validation() {
             let scanner = Scanner {
-                id: "test".to_string(),
+                name: "Test Scanner".to_string(),
                 device_name: "test:device".to_string(),
                 additional_args: vec![],
                 source_adf_single: Some("ADF".to_string()),
@@ -359,10 +359,10 @@ scanners:
             let temp_dir = TempDir::new().unwrap();
             let config_path = temp_dir.path().join("config.yml");
             let config_content = r#"
-outdir: /tmp/archive
+output_directory: /tmp/archive
 
 scanners:
-  - id: test_scanner
+  - name: Test Scanner
     device_name: "test:scanner:device"
 "#;
             fs::write(&config_path, config_content).unwrap();
@@ -382,11 +382,11 @@ scanners:
             let temp_dir = TempDir::new().unwrap();
             let config_path = temp_dir.path().join("config.yml");
             let config_content = r#"
-outdir: /tmp/archive
+output_directory: /tmp/archive
 
 # Scanner configuration
 scanners:
-  - id: test_scanner
+  - name: Test Scanner
     device_name: "test:scanner:device"
     source_flatbed: Flatbed
 "#;

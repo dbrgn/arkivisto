@@ -2,12 +2,12 @@
 source: src/config.rs
 expression: config
 ---
-outdir: /tmp/foo
+output_directory: /tmp/foo
 tools:
   ocrmypdf:
     language: eng
 scanners:
-  - id: brother
+  - name: Brother MFC
     device_name: "brother3:net1;dev0"
     source_adf_single: Automatic Document Feeder(centrally aligned)
     source_flatbed: FlatBed

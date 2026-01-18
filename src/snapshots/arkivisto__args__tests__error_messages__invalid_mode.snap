@@ -3,6 +3,6 @@ source: src/args.rs
 expression: err.to_string()
 ---
 error: invalid value 'invalid_mode' for '[MODE]'
-  [possible values: scan, process, archive, single]
+  [possible values: scan, process, archive, single, init-config]
 
 For more information, try '--help'.

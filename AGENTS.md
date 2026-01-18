@@ -28,6 +28,10 @@ Testing:
 - When adding multiple unit tests for a function, struct or enum, wrap them in a dedicated module named after
   that unit. For example, when a function is called `check_foo`, the test path should be
   `tests::check_foo::a_test` and `tests::check_foo::another_test`.
+- When creating tests for complex values (i.e. complex structs, a vec containing multiple structs, etc), use
+  `insta` for these tests. But when testing simple values (e.g. empty vecs, vecs of strings, etc) write
+  regular unit tests without insta.
+- Use `rstest` for testing multiple input-output combinations.
 - When generating insta snapshots, do not accept them, let the developer review and accept manually.
 
 Other:
