@@ -52,6 +52,55 @@ const OCR_LANGUAGES: &[OcrLanguage] = &[
     },
 ];
 
+/// PDF viewer option
+#[derive(Debug, Clone)]
+struct PdfViewer {
+    name: &'static str,
+    binary: &'static str,
+}
+
+impl std::fmt::Display for PdfViewer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+/// List of PDF viewer options
+const PDF_VIEWERS: &[PdfViewer] = &[
+    PdfViewer {
+        name: "System default (through xdg-open)",
+        binary: "xdg-open",
+    },
+    PdfViewer {
+        name: "Evince",
+        binary: "evince",
+    },
+    PdfViewer {
+        name: "Okular",
+        binary: "okular",
+    },
+    PdfViewer {
+        name: "Atril",
+        binary: "atril",
+    },
+    PdfViewer {
+        name: "Zathura",
+        binary: "zathura",
+    },
+    PdfViewer {
+        name: "MuPDF",
+        binary: "mupdf",
+    },
+    PdfViewer {
+        name: "Xpdf",
+        binary: "xpdf",
+    },
+    PdfViewer {
+        name: "Foxit Reader",
+        binary: "foxitreader",
+    },
+];
+
 /// A scanner detected by `scanimage -L`
 #[derive(Debug, serde::Serialize)]
 struct DetectedScanner {
@@ -153,6 +202,18 @@ pub fn run_init_config() -> Result<()> {
             .join("+")
     };
 
+    // Ask for PDF viewer
+    let pdf_viewer = {
+        let filtered_options = PDF_VIEWERS
+            .iter()
+            .filter(|viewer| which::which(viewer.binary).is_ok())
+            .collect::<Vec<_>>();
+        if filtered_options.is_empty() {
+            anyhow::bail!("Could not find any available PDF viewer");
+        }
+        Select::new("Which PDF viewer do you want to use?", filtered_options).prompt()?
+    };
+
     // Create config struct
     let config = Config {
         output_directory: output_directory.expect("Output directory is None"),
@@ -160,6 +221,7 @@ pub fn run_init_config() -> Result<()> {
             ocrmypdf: OcrmypdfConfig {
                 language: ocr_languages,
             },
+            pdf_viewer: pdf_viewer.binary.to_string(),
         },
         scanners,
         authors: vec![],
@@ -173,6 +235,7 @@ pub fn run_init_config() -> Result<()> {
         println!("  - {}", scanner.name);
     }
     println!("  OCR languages: {:?}", &config.tools.ocrmypdf.language);
+    println!("  PDF viewer: {:?}", &config.tools.pdf_viewer);
 
     // Save
     config.save(None)?;

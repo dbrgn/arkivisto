@@ -6,6 +6,7 @@ output_directory: /tmp/archive
 tools:
   ocrmypdf:
     language: eng
+  pdf_viewer: xdg-open
 scanners:
   - name: Test Scanner
     device_name: "test:scanner:device"
