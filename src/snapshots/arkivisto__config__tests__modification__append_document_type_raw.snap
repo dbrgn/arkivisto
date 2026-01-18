@@ -3,7 +3,7 @@ source: src/config.rs
 expression: config_string
 ---
 
-outdir = "/tmp/archive"
+output_directory = "/tmp/archive"
 
 [[scanners]]
 id = "test_scanner"

@@ -638,7 +638,7 @@ pub fn build_output_path(
     document_type: &DocumentType,
     filename: &str,
 ) -> PathBuf {
-    let mut path = config.outdir.clone();
+    let mut path = config.output_directory.clone();
     path.push(&author.directory);
     if !document_type.directory.is_empty() {
         path.push(&document_type.directory);

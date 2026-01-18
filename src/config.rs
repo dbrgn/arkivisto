@@ -12,7 +12,7 @@ use tracing::{debug, trace};
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Config {
     /// Default output directory for archived files
-    pub outdir: PathBuf,
+    pub output_directory: PathBuf,
 
     /// Tool-specific configuration
     #[serde(default)]
@@ -70,7 +70,7 @@ pub struct Author {
     /// Keywords that must NOT be present for auto-match (case-insensitive)
     #[serde(default)]
     pub exclude_keywords: Vec<String>,
-    /// Directory name for this author's files (relative to outdir, or an absolute path)
+    /// Directory name for this author's files (relative to output_directory, or an absolute path)
     pub directory: String,
     /// Keywords to embed in PDF metadata for this author
     #[serde(default)]
@@ -277,7 +277,7 @@ mod tests {
     fn parse_minimal_config() {
         let config: Config = serde_saphyr::from_str(
             r#"
-outdir: /tmp/foo
+output_directory: /tmp/foo
 
 scanners:
   - name: Brother MFC
@@ -298,7 +298,7 @@ scanners:
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("config.yml");
         let config_content = r#"
-outdir: /tmp/archive
+output_directory: /tmp/archive
 
 scanners:
   - name: Test Scanner
@@ -359,7 +359,7 @@ scanners:
             let temp_dir = TempDir::new().unwrap();
             let config_path = temp_dir.path().join("config.yml");
             let config_content = r#"
-outdir: /tmp/archive
+output_directory: /tmp/archive
 
 scanners:
   - name: Test Scanner
@@ -382,7 +382,7 @@ scanners:
             let temp_dir = TempDir::new().unwrap();
             let config_path = temp_dir.path().join("config.yml");
             let config_content = r#"
-outdir: /tmp/archive
+output_directory: /tmp/archive
 
 # Scanner configuration
 scanners:

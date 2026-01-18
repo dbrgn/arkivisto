@@ -2,7 +2,7 @@
 source: src/config.rs
 expression: config
 ---
-outdir: /tmp/foo
+output_directory: /tmp/foo
 tools:
   ocrmypdf:
     language: eng

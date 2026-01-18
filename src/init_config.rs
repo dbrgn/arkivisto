@@ -1,10 +1,11 @@
-use std::{process::Command, time::Duration};
+use std::{path::PathBuf, process::Command, time::Duration};
 
 use anyhow::{Context, Result};
 use indicatif::ProgressBar;
-use inquire::{Confirm, Select};
+use inquire::{Confirm, Select, Text};
+use tracing::trace;
 
-use crate::config::{Config, Scanner};
+use crate::config::{Config, Scanner, Tools};
 
 /// A scanner detected by `scanimage -L`
 #[derive(Debug, serde::Serialize)]
@@ -31,16 +32,9 @@ impl SourceType {
     }
 }
 
-/// Result of the scanner detection process
-#[derive(Debug)]
-#[allow(dead_code)]
-pub struct ScannerDetectionResult {
-    pub scanners: Vec<Scanner>,
-}
-
 /// Run the init-config wizard
 pub fn run_init_config() -> Result<()> {
-    // 1. Check if config already exists
+    // Check if config already exists
     let config_path = Config::config_path()?;
     if config_path.exists() {
         anyhow::bail!(
@@ -49,14 +43,14 @@ pub fn run_init_config() -> Result<()> {
         );
     }
 
-    // 2. Detect scanners
+    // Detect scanners
     let detected_scanners = detect_scanners()?;
     if detected_scanners.is_empty() {
         println!("No scanners detected.");
         return Ok(());
     }
 
-    // 3. Ask user which scanners to add
+    // Ask user which scanners to add
     let mut selected_scanners = Vec::new();
     for scanner in detected_scanners {
         let add = Confirm::new(&format!(
@@ -71,20 +65,50 @@ pub fn run_init_config() -> Result<()> {
         }
     }
     if selected_scanners.is_empty() {
-        println!("No scanners selected.");
-        return Ok(());
+        anyhow::bail!("No scanners detected or selected.");
     }
 
-    // 4. For each selected scanner, detect and classify sources
+    // For each selected scanner, detect and classify sources
     let mut scanners = Vec::new();
     for detected in selected_scanners {
         let scanner = configure_scanner(detected)?;
         scanners.push(scanner);
     }
 
-    // 5. Print debug output
-    let result = ScannerDetectionResult { scanners };
-    println!("{:#?}", result);
+    // Ask for output directory
+    let mut output_directory: Option<PathBuf> = None;
+    while output_directory.is_none() {
+        let path_str = Text::new("Output directory path:").prompt()?;
+        let path = PathBuf::from(&path_str);
+        if !path.exists() {
+            println!("Path {:?} does not exist.", &path);
+            continue;
+        }
+        if !path.is_dir() {
+            println!("Path {:?} is not a directory.", &path);
+            continue;
+        }
+        output_directory = Some(path);
+    }
+
+    // Create config struct
+    let config = Config {
+        output_directory: output_directory.expect("Output directory is None"),
+        tools: Tools::default(),
+        scanners,
+        authors: vec![],
+    };
+
+    // Print
+    println!("Writing config to {:?}:", config_path);
+    println!("  Output directory: {:?}", &config.output_directory);
+    println!("  Scanners:");
+    for scanner in &config.scanners {
+        println!("  - {}", scanner.name);
+    }
+
+    // Save
+    config.save(None)?;
 
     Ok(())
 }
@@ -120,6 +144,7 @@ fn parse_scanimage_list(output: &str) -> Result<Vec<DetectedScanner>> {
     let mut scanners = Vec::new();
     for line in output.lines() {
         if let Some(caps) = re.captures(line) {
+            trace!("Parsing line: {:?}", line);
             scanners.push(DetectedScanner {
                 device_name: caps[1].to_string(),
                 description: caps[2].trim().to_string(),
@@ -131,7 +156,7 @@ fn parse_scanimage_list(output: &str) -> Result<Vec<DetectedScanner>> {
 
 /// Detect sources for a scanner and configure it
 fn configure_scanner(detected: DetectedScanner) -> Result<Scanner> {
-    let sources = detect_sources(&detected.device_name)?;
+    let sources = detect_sources(&detected.device_name, &detected.description)?;
 
     // Classify sources
     let mut flatbed_options: Vec<&str> = Vec::new();
@@ -172,8 +197,9 @@ fn configure_scanner(detected: DetectedScanner) -> Result<Scanner> {
 }
 
 /// Detect available sources for a scanner
-fn detect_sources(device_name: &str) -> Result<Vec<String>> {
-    let spinner = ProgressBar::new_spinner().with_message("Detecting scanner config...");
+fn detect_sources(device_name: &str, description: &str) -> Result<Vec<String>> {
+    let spinner = ProgressBar::new_spinner()
+        .with_message(format!("Detecting sources for '{}'...", description));
     spinner.enable_steady_tick(Duration::from_millis(100));
 
     let output = Command::new("scanimage")
@@ -195,6 +221,7 @@ fn parse_source_options(output: &str) -> Result<Vec<String>> {
 
     for line in output.lines() {
         if let Some(caps) = re.captures(line) {
+            trace!("Parsing sources: {:?}", line);
             let options_str = caps[1].trim();
             return Ok(options_str
                 .split('|')
@@ -208,6 +235,8 @@ fn parse_source_options(output: &str) -> Result<Vec<String>> {
 
 /// Classify a source based on its name
 fn classify_source(source: &str) -> Option<SourceType> {
+    trace!("Classify source: {:?}", source);
+
     let lower = source.to_lowercase();
 
     // Check for duplex first (more specific)
