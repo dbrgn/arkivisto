@@ -193,7 +193,7 @@ impl Config {
         // Check if file exists
         if !config_path.exists() {
             anyhow::bail!(
-                "Config file does not exist. Please create a config file at: {}",
+                "Config file not found at: {}\n\nTo generate a config file, run:\n\n    arkivisto init-config",
                 config_path.display()
             );
         }

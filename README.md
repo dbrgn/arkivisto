@@ -30,6 +30,13 @@ You need the following binaries on your system:
 - `tiffcp` (part of libtiff)
 - `docker` (part of Docker or Podman)
 
+## Setup
+
+To generate an initial config, run:
+
+    arkivisto init-config
+
+
 ## History
 
 Back in 2014, I wrote a little Python script called

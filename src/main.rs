@@ -62,7 +62,17 @@ fn main() -> Result<()> {
     }
 
     // Load config (mutable for archive mode to add new authors/document types)
-    let mut config = config::Config::load()?;
+    let mut config = {
+        let path = config::Config::config_path()?;
+        if !path.exists() {
+            eprintln!(
+                "Config file not found at: {}\n\nTo generate a config file, run:\n\n    arkivisto init-config",
+                path.display()
+            );
+            std::process::exit(1);
+        }
+        config::Config::load()?
+    };
 
     // Determine the XDG cache directory, creating it if it doesn't exist
     // TODO: Should this really be in the cache dir? Or is it better to store files in a more permanent location?
