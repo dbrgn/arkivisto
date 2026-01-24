@@ -12,6 +12,7 @@ mod common;
 mod config;
 mod fs_utils;
 mod init_config;
+mod metadata;
 mod process;
 mod scan;
 

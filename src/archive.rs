@@ -20,6 +20,7 @@ use tracing::{debug, warn};
 use crate::{
     common::filenames,
     config::{Author, Config, DocumentType},
+    metadata::{PdfMetadata, set_pdf_metadata},
 };
 
 /// German month name prefixes for date parsing
@@ -665,90 +666,6 @@ pub fn build_output_path(
     }
     path.push(filename);
     path
-}
-
-/// PDF metadata to embed in the document
-#[derive(Debug, Clone)]
-pub struct PdfMetadata {
-    pub title: String,
-    pub author: String,
-    pub creator: String,
-    pub create_date: NaiveDate,
-    pub keywords: Vec<String>,
-}
-
-/// Set PDF metadata using lopdf and save to a new file.
-pub fn set_pdf_metadata(
-    input_path: &Path,
-    output_path: &Path,
-    metadata: &PdfMetadata,
-) -> Result<()> {
-    use lopdf::{Document, Object, StringFormat};
-
-    debug!(
-        "Setting PDF metadata: {:?} -> {:?}",
-        input_path, output_path
-    );
-
-    let mut doc = Document::load(input_path)
-        .with_context(|| format!("Failed to load PDF: {}", input_path.display()))?;
-
-    // Create or get Info dictionary
-    let info_dict = if let Ok(info_ref) = doc.trailer.get(b"Info") {
-        if let Ok(Object::Reference(id)) = info_ref.as_reference().map(Object::Reference) {
-            // Get existing info dictionary
-            if let Ok(Object::Dictionary(dict)) = doc.get_object_mut(id) {
-                dict
-            } else {
-                return Err(anyhow!("Info object is not a dictionary"));
-            }
-        } else {
-            return Err(anyhow!("Info is not a reference"));
-        }
-    } else {
-        // Create new Info dictionary
-        let info_id = doc.add_object(lopdf::Dictionary::new());
-        doc.trailer.set("Info", Object::Reference(info_id));
-        if let Ok(Object::Dictionary(dict)) = doc.get_object_mut(info_id) {
-            dict
-        } else {
-            return Err(anyhow!("Failed to create Info dictionary"));
-        }
-    };
-
-    // Set metadata fields
-    info_dict.set(
-        "Title",
-        Object::String(metadata.title.as_bytes().to_vec(), StringFormat::Literal),
-    );
-    info_dict.set(
-        "Author",
-        Object::String(metadata.author.as_bytes().to_vec(), StringFormat::Literal),
-    );
-    info_dict.set(
-        "Creator",
-        Object::String(metadata.creator.as_bytes().to_vec(), StringFormat::Literal),
-    );
-
-    // Set creation date in PDF format: D:YYYYMMDDHHmmSS
-    let date_str = format!("D:{}000000", metadata.create_date.format("%Y%m%d"));
-    info_dict.set(
-        "CreationDate",
-        Object::String(date_str.as_bytes().to_vec(), StringFormat::Literal),
-    );
-
-    // Set keywords
-    let keywords_str = metadata.keywords.join(", ");
-    info_dict.set(
-        "Keywords",
-        Object::String(keywords_str.as_bytes().to_vec(), StringFormat::Literal),
-    );
-
-    // Save to output path
-    doc.save(output_path)
-        .with_context(|| format!("Failed to save PDF: {}", output_path.display()))?;
-
-    Ok(())
 }
 
 /// Create a preview copy of the PDF in the scans directory.
