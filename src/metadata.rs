@@ -7,7 +7,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result, anyhow};
 use chrono::NaiveDate;
-use lopdf::{Document, Object, StringFormat};
+use lopdf::{Document, Object, StringFormat, encode_utf16_be};
 use regex::Regex;
 use tracing::debug;
 
@@ -59,7 +59,7 @@ pub fn set_pdf_metadata(
     // Set metadata fields
     info_dict.set(
         "Title",
-        Object::String(metadata.title.as_bytes().to_vec(), StringFormat::Literal),
+        Object::String(encode_utf16_be(&metadata.title), StringFormat::Literal),
     );
     info_dict.set(
         "Author",
@@ -77,7 +77,7 @@ pub fn set_pdf_metadata(
     let keywords_str = metadata.keywords.join(", ");
     info_dict.set(
         "Keywords",
-        Object::String(keywords_str.as_bytes().to_vec(), StringFormat::Literal),
+        Object::String(encode_utf16_be(&keywords_str), StringFormat::Literal),
     );
 
     // Update XMP metadata stream if present (required for PDF/A compliance)
