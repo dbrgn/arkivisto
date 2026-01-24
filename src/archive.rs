@@ -822,8 +822,6 @@ pub fn archive_document(
     // Prepare metadata
     let metadata = PdfMetadata {
         title,
-        author: author.name.clone(),
-        creator: author.name.clone(),
         create_date: date,
         keywords: Vec::from_iter(keywords),
     };

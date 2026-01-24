@@ -15,8 +15,6 @@ use tracing::debug;
 #[derive(Debug, Clone)]
 pub struct PdfMetadata {
     pub title: String,
-    pub author: String,
-    pub creator: String,
     pub create_date: NaiveDate,
     pub keywords: Vec<String>,
 }
@@ -65,11 +63,7 @@ pub fn set_pdf_metadata(
     );
     info_dict.set(
         "Author",
-        Object::String(metadata.author.as_bytes().to_vec(), StringFormat::Literal),
-    );
-    info_dict.set(
-        "Creator",
-        Object::String(metadata.creator.as_bytes().to_vec(), StringFormat::Literal),
+        Object::String("".as_bytes().to_vec(), StringFormat::Literal),
     );
 
     // Set creation date in PDF format: D:YYYYMMDDHHmmSS
@@ -154,16 +148,6 @@ fn update_xmp_metadata(doc: &mut Document, metadata: &PdfMetadata) -> Result<()>
         })
         .into_owned();
 
-    // Update dc:creator
-    let creator_re = Regex::new(
-        r"(?s)(<dc:creator>\s*<rdf:Seq>\s*<rdf:li[^>]*>)([^<]*)(</rdf:li>\s*</rdf:Seq>\s*</dc:creator>)",
-    )?;
-    xmp = creator_re
-        .replace(&xmp, |caps: &regex::Captures| {
-            format!("{}{}{}", &caps[1], xml_escape(&metadata.author), &caps[3])
-        })
-        .into_owned();
-
     // Update xmp:CreateDate
     let create_date_re = Regex::new(r"(<xmp:CreateDate>)([^<]*)(</xmp:CreateDate>)")?;
     let xmp_date = metadata.create_date.format("%Y-%m-%dT00:00:00+00:00");
@@ -187,14 +171,6 @@ fn update_xmp_metadata(doc: &mut Document, metadata: &PdfMetadata) -> Result<()>
     xmp = keywords_re
         .replace(&xmp, |caps: &regex::Captures| {
             format!("{}{}{}", &caps[1], xml_escape(&keywords_str), &caps[3])
-        })
-        .into_owned();
-
-    // Update pdf:Producer (use creator as producer)
-    let producer_re = Regex::new(r"(<pdf:Producer>)([^<]*)(</pdf:Producer>)")?;
-    xmp = producer_re
-        .replace(&xmp, |caps: &regex::Captures| {
-            format!("{}{}{}", &caps[1], xml_escape(&metadata.creator), &caps[3])
         })
         .into_owned();
 
@@ -314,8 +290,6 @@ mod tests {
             let mut doc = make_pdf_with_xmp(&sample_xmp());
             let metadata = PdfMetadata {
                 title: "My Document".to_string(),
-                author: "Test Author".to_string(),
-                creator: "Arkivisto".to_string(),
                 create_date: NaiveDate::from_ymd_opt(2025, 3, 15).unwrap(),
                 keywords: vec!["test".to_string()],
             };
@@ -334,36 +308,10 @@ mod tests {
         }
 
         #[test]
-        fn updates_creator() {
-            let mut doc = make_pdf_with_xmp(&sample_xmp());
-            let metadata = PdfMetadata {
-                title: "Title".to_string(),
-                author: "John Doe".to_string(),
-                creator: "Arkivisto".to_string(),
-                create_date: NaiveDate::from_ymd_opt(2025, 3, 15).unwrap(),
-                keywords: vec![],
-            };
-
-            super::update_xmp_metadata(&mut doc, &metadata).unwrap();
-
-            let catalog = doc.catalog().unwrap();
-            let meta_ref = catalog.get(b"Metadata").unwrap().as_reference().unwrap();
-            if let Object::Stream(stream) = doc.get_object(meta_ref).unwrap() {
-                let content = String::from_utf8(stream.content.clone()).unwrap();
-                assert!(content.contains("<rdf:li>John Doe</rdf:li>"));
-                assert!(!content.contains("OCRmyPDF</rdf:li>"));
-            } else {
-                panic!("Expected stream object");
-            }
-        }
-
-        #[test]
         fn updates_dates() {
             let mut doc = make_pdf_with_xmp(&sample_xmp());
             let metadata = PdfMetadata {
                 title: "Title".to_string(),
-                author: "Author".to_string(),
-                creator: "Creator".to_string(),
                 create_date: NaiveDate::from_ymd_opt(2025, 6, 20).unwrap(),
                 keywords: vec![],
             };
@@ -390,8 +338,6 @@ mod tests {
             let mut doc = make_pdf_with_xmp(&sample_xmp());
             let metadata = PdfMetadata {
                 title: "Title".to_string(),
-                author: "Author".to_string(),
-                creator: "Creator".to_string(),
                 create_date: NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
                 keywords: vec!["invoice".to_string(), "tax".to_string()],
             };
@@ -409,35 +355,10 @@ mod tests {
         }
 
         #[test]
-        fn updates_producer() {
-            let mut doc = make_pdf_with_xmp(&sample_xmp());
-            let metadata = PdfMetadata {
-                title: "Title".to_string(),
-                author: "Author".to_string(),
-                creator: "Arkivisto".to_string(),
-                create_date: NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
-                keywords: vec![],
-            };
-
-            super::update_xmp_metadata(&mut doc, &metadata).unwrap();
-
-            let catalog = doc.catalog().unwrap();
-            let meta_ref = catalog.get(b"Metadata").unwrap().as_reference().unwrap();
-            if let Object::Stream(stream) = doc.get_object(meta_ref).unwrap() {
-                let content = String::from_utf8(stream.content.clone()).unwrap();
-                assert!(content.contains("<pdf:Producer>Arkivisto</pdf:Producer>"));
-            } else {
-                panic!("Expected stream object");
-            }
-        }
-
-        #[test]
         fn escapes_special_characters_in_title() {
             let mut doc = make_pdf_with_xmp(&sample_xmp());
             let metadata = PdfMetadata {
                 title: "Tom & Jerry's <doc>".to_string(),
-                author: "Author".to_string(),
-                creator: "Creator".to_string(),
                 create_date: NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
                 keywords: vec![],
             };
@@ -474,8 +395,6 @@ mod tests {
 
             let metadata = PdfMetadata {
                 title: "Title".to_string(),
-                author: "Author".to_string(),
-                creator: "Creator".to_string(),
                 create_date: NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
                 keywords: vec![],
             };
