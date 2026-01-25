@@ -15,7 +15,7 @@ use std::{
 use anyhow::{Context, Result, anyhow};
 use chrono::NaiveDate;
 use regex::Regex;
-use tracing::{debug, warn};
+use tracing::{debug, trace, warn};
 
 use crate::{
     common::filenames,
@@ -212,6 +212,8 @@ impl OcrText {
         };
 
         if let Some(cap) = re.captures(&self.text) {
+            trace!(?cap, "Extracting title: Found capture");
+
             // Apply the replacement pattern to the full match
             let matched = cap.get(0)?;
             let result = re.replace(matched.as_str(), pattern_str);
@@ -332,7 +334,7 @@ fn create_author(config: &mut Config) -> Result<Author> {
         .collect();
 
     let default_dir = name.replace(' ', "_");
-    let directory = inquire::Text::new("Output directory name:")
+    let directory = inquire::Text::new("Output directory name (or path):")
         .with_default(&default_dir)
         .prompt()?;
 
@@ -801,7 +803,7 @@ pub fn archive_document(
     let author = match select_author(config, &ocr_text)? {
         Some(a) => a,
         None => {
-            println!("=== SKIPPED ===\n");
+            println!("Document skipped");
             return Ok(());
         }
     };
@@ -824,7 +826,7 @@ pub fn archive_document(
 
     // Prepare metadata
     let metadata = PdfMetadata {
-        title,
+        title: title.clone(),
         create_date: date,
         keywords: Vec::from_iter(keywords),
     };
@@ -835,19 +837,19 @@ pub fn archive_document(
 
     // Update preview with final metadata
     fs::copy(&final_output, &preview_path)?;
-    println!(
+    debug!(
         "Preview updated with metadata at: {}",
         preview_path.display()
     );
 
     // Confirm save
-    println!("Output path: {}", output_path.display());
+    trace!("Output path: {}", output_path.display());
     let confirm = inquire::Confirm::new(&format!("Save to {}?", output_path.display()))
         .with_default(true)
         .prompt()?;
 
     if !confirm {
-        println!("=== SKIPPED ===\n");
+        println!("Document \"{title}\" skipped");
         return Ok(());
     }
 
@@ -857,7 +859,7 @@ pub fn archive_document(
             .with_default(false)
             .prompt()?;
         if !overwrite {
-            println!("=== SKIPPED ===\n");
+            println!("Document \"{title}\" skipped");
             return Ok(());
         }
     }
@@ -880,7 +882,7 @@ pub fn archive_document(
         )
     })?;
 
-    println!("=== SUCCESS ===\n");
+    println!("Document \"{title}\" archived successfully");
 
     Ok(())
 }
