@@ -9,7 +9,7 @@ use std::{
     collections::HashSet,
     fs,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
 };
 
 use anyhow::{Context, Result, anyhow};
@@ -787,6 +787,8 @@ pub fn archive_document(
         if open_preview {
             let spawned = Command::new(&config.tools.pdf_viewer)
                 .arg(&preview_path)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
                 .spawn();
             if spawned.is_err() {
                 eprintln!("Failed to spawn PDF viewer: {:?}", spawned);

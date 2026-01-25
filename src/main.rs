@@ -143,6 +143,10 @@ fn main() -> Result<()> {
             if document_dirs.is_empty() {
                 println!("No documents ready for archiving.");
             } else {
+                println!(
+                    "Found {} documents ready for archiving.",
+                    document_dirs.len()
+                );
                 for (i, document_dir) in document_dirs.iter().enumerate() {
                     let offer_preview_open = i == 0;
                     archive::archive_document(
