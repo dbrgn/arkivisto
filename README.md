@@ -30,6 +30,28 @@ You need the following binaries on your system:
 - `tiffcp` (part of libtiff)
 - `docker` (part of Docker or Podman)
 
+## Regular Expressions
+
+The config allows you to specify regular expressions in two locations: Titles
+and dates.
+
+For the dates, this is just a way to make date matching more reliable in case
+there are multiple dates in the document, it allows you to match the correct
+one.
+
+For titles, it allows extracting information from the document and putting it
+into a title pattern. For matching and replacement, the Rust
+[regex](https://docs.rs/regex) crate is being used. For replacement, match
+groups can be referenced using the `$` sign. For example, this config:
+
+```yaml
+pdf_title_regex: "Invoice for the year .*(20[0-9]{2})"
+pdf_title_pattern: Subscription $1
+```
+
+...will match the string `Invoice for the year 2026` and result in the document
+title `Subscription 2026`.
+
 ## Setup
 
 To generate an initial config, run:
