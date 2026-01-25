@@ -7,7 +7,7 @@ efficiently.
 
 [![GitHub CI][github-actions-badge]][github-actions]
 
-**PRE-ALPHA!**
+**ALPHA STATUS! Don't fully trust it yet.**
 
 ## Features
 
@@ -35,7 +35,6 @@ You need the following binaries on your system:
 To generate an initial config, run:
 
     arkivisto init-config
-
 
 ## History
 

@@ -292,7 +292,7 @@ pub struct ScanContext<'a> {
     /// Whether to fake scanning
     pub fake_scan: bool,
 
-    /// Cache directory where scans are stored
+    /// Data directory where scans are stored
     pub scans_dir: &'a Path,
 }
 

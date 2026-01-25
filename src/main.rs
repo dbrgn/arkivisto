@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use app_dirs::AppInfo;
 use clap::Parser;
-use tracing::{debug, level_filters::LevelFilter};
+use tracing::{debug, level_filters::LevelFilter, trace};
 use tracing_subscriber::{filter::Targets, prelude::*};
 
 use crate::{args::Mode, common::CheckDependencyResult};
@@ -75,10 +75,10 @@ fn main() -> Result<()> {
         config::Config::load()?
     };
 
-    // Determine the XDG cache directory, creating it if it doesn't exist
-    // TODO: Should this really be in the cache dir? Or is it better to store files in a more permanent location?
-    let scans_dir = app_dirs::app_dir(app_dirs::AppDataType::UserCache, &crate::APP_INFO, "scans")
-        .context("Could not determine XDG app cache directory for scans")?;
+    // Determine the XDG data directory, creating it if it doesn't exist
+    let scans_dir = app_dirs::app_dir(app_dirs::AppDataType::UserData, &crate::APP_INFO, "scans")
+        .context("Could not determine XDG app data directory for scans")?;
+    trace!("Scans path: {:?}", scans_dir);
 
     // Create scan context after selecting a scanner
     let get_scan_context = || -> Result<scan::ScanContext> {
