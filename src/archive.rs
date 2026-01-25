@@ -12,7 +12,7 @@ use std::{
     process::{Command, Stdio},
 };
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use chrono::NaiveDate;
 use regex::Regex;
 use tracing::{debug, trace, warn};
@@ -231,23 +231,42 @@ impl AsRef<str> for OcrText {
     }
 }
 
+const AUTHOR_OPTION_SEPARATOR: &str = "───";
+const AUTHOR_OPTION_SKIP: &str = "Skip this document";
+const AUTHOR_OPTION_CREATE: &str = "Create new author";
+
 /// Build author selection options and determine default selection index.
 ///
 /// Returns a tuple of (options, default_index) where:
 /// - options is a list of display strings for the selection menu
 /// - default_index is the suggested cursor position (0-based)
-fn build_author_options(config: &Config, ocr_text: &OcrText) -> (Vec<String>, usize) {
+fn build_author_options(config: &Config, ocr_text: &OcrText) -> Result<(Vec<String>, usize)> {
     let mut matching = ocr_text.matching_authors(&config.authors);
+
+    // Data validation
+    if config
+        .authors
+        .iter()
+        .any(|author| author.name == AUTHOR_OPTION_SEPARATOR)
+    {
+        bail!(
+            "Author config cannot contain entry with name matching the separator {:?}",
+            AUTHOR_OPTION_SEPARATOR
+        );
+    }
 
     // Build options list
     let mut options: Vec<String> = Vec::new();
-    options.push("Skip this document".to_string());
-    options.push("Create new author".to_string());
+    options.push(AUTHOR_OPTION_SKIP.to_string());
+    options.push(AUTHOR_OPTION_CREATE.to_string());
 
     // Add matching authors first (sorted by name)
     matching.sort_by_key(|author| author.name.to_lowercase());
-    for author in &matching {
-        options.push(format!("{} (matched)", author.name));
+    if !matching.is_empty() {
+        options.push(AUTHOR_OPTION_SEPARATOR.to_string());
+        for author in &matching {
+            options.push(format!("{} (matched)", author.name));
+        }
     }
 
     // Add non-matching authors (sorted by name)
@@ -258,12 +277,15 @@ fn build_author_options(config: &Config, ocr_text: &OcrText) -> (Vec<String>, us
         .map(|author| author.name.clone())
         .collect::<Vec<_>>();
     non_matching_authors.sort_by_key(|name| name.to_lowercase());
-    options.extend_from_slice(&non_matching_authors);
+    if !non_matching_authors.is_empty() {
+        options.push(AUTHOR_OPTION_SEPARATOR.to_string());
+        options.extend_from_slice(&non_matching_authors);
+    }
 
     // Determine default selection
-    let default_index = if !matching.is_empty() { 2 } else { 0 };
+    let default_index = if !matching.is_empty() { 3 } else { 0 };
 
-    (options, default_index)
+    Ok((options, default_index))
 }
 
 /// Prompt user to select an author from the list of authors.
@@ -273,18 +295,22 @@ fn build_author_options(config: &Config, ocr_text: &OcrText) -> (Vec<String>, us
 ///
 /// Returns `None` if the user chooses to skip the document.
 pub fn select_author(config: &mut Config, ocr_text: &OcrText) -> Result<Option<Author>> {
-    let (options, default_index) = build_author_options(config, ocr_text);
+    let (options, default_index) = build_author_options(config, ocr_text)?;
 
     let selection = inquire::Select::new("Select author:", options)
         .with_starting_cursor(default_index)
         .with_page_size(12)
         .prompt()?;
 
-    if selection == "Skip this document" {
-        return Ok(None);
+    if selection == AUTHOR_OPTION_SEPARATOR {
+        // Currently we cannot prevent this
+        return select_author(config, ocr_text);
     }
 
-    if selection == "Create new author" {
+    if selection == AUTHOR_OPTION_SKIP {
+        return Ok(None);
+    }
+    if selection == AUTHOR_OPTION_CREATE {
         let author = create_author(config)?;
         return Ok(Some(author));
     }
@@ -1042,9 +1068,9 @@ mod tests {
             let config = make_config(vec![]);
             let ocr_text = OcrText::new("Some text");
 
-            let (options, default_index) = build_author_options(&config, &ocr_text);
+            let (options, default_index) = build_author_options(&config, &ocr_text).unwrap();
 
-            assert_eq!(options, vec!["Skip this document", "Create new author"]);
+            assert_eq!(options, vec![AUTHOR_OPTION_SKIP, AUTHOR_OPTION_CREATE]);
             assert_eq!(default_index, 0);
         }
 
@@ -1056,11 +1082,17 @@ mod tests {
             ]);
             let ocr_text = OcrText::new("Some unrelated text");
 
-            let (options, default_index) = build_author_options(&config, &ocr_text);
+            let (options, default_index) = build_author_options(&config, &ocr_text).unwrap();
 
             assert_eq!(
                 options,
-                vec!["Skip this document", "Create new author", "Alice", "Bob"]
+                vec![
+                    AUTHOR_OPTION_SKIP,
+                    AUTHOR_OPTION_CREATE,
+                    AUTHOR_OPTION_SEPARATOR,
+                    "Alice",
+                    "Bob"
+                ]
             );
             assert_eq!(default_index, 0);
         }
@@ -1073,18 +1105,20 @@ mod tests {
             ]);
             let ocr_text = OcrText::new("This is from alice");
 
-            let (options, default_index) = build_author_options(&config, &ocr_text);
+            let (options, default_index) = build_author_options(&config, &ocr_text).unwrap();
 
             assert_eq!(
                 options,
                 vec![
-                    "Skip this document",
-                    "Create new author",
+                    AUTHOR_OPTION_SKIP,
+                    AUTHOR_OPTION_CREATE,
+                    AUTHOR_OPTION_SEPARATOR,
                     "Alice (matched)",
+                    AUTHOR_OPTION_SEPARATOR,
                     "Bob"
                 ]
             );
-            assert_eq!(default_index, 2);
+            assert_eq!(default_index, 3);
         }
 
         #[test]
@@ -1096,19 +1130,21 @@ mod tests {
             ]);
             let ocr_text = OcrText::new("Letter from company");
 
-            let (options, default_index) = build_author_options(&config, &ocr_text);
+            let (options, default_index) = build_author_options(&config, &ocr_text).unwrap();
 
             assert_eq!(
                 options,
                 vec![
-                    "Skip this document",
-                    "Create new author",
+                    AUTHOR_OPTION_SKIP,
+                    AUTHOR_OPTION_CREATE,
+                    AUTHOR_OPTION_SEPARATOR,
                     "Alice (matched)",
                     "Zara (matched)",
+                    AUTHOR_OPTION_SEPARATOR,
                     "Bob"
                 ]
             );
-            assert_eq!(default_index, 2);
+            assert_eq!(default_index, 3);
         }
 
         #[test]
@@ -1121,20 +1157,22 @@ mod tests {
             ]);
             let ocr_text = OcrText::new("Letter from company");
 
-            let (options, default_index) = build_author_options(&config, &ocr_text);
+            let (options, default_index) = build_author_options(&config, &ocr_text).unwrap();
 
             assert_eq!(
                 options,
                 vec![
-                    "Skip this document",
-                    "Create new author",
+                    AUTHOR_OPTION_SKIP,
+                    AUTHOR_OPTION_CREATE,
+                    AUTHOR_OPTION_SEPARATOR,
                     "Alice (matched)",
+                    AUTHOR_OPTION_SEPARATOR,
                     "Bob",
                     "Charlie",
                     "Zara"
                 ]
             );
-            assert_eq!(default_index, 2);
+            assert_eq!(default_index, 3);
         }
 
         #[test]
@@ -1146,13 +1184,14 @@ mod tests {
             ]);
             let ocr_text = OcrText::new("Some text");
 
-            let (options, default_index) = build_author_options(&config, &ocr_text);
+            let (options, default_index) = build_author_options(&config, &ocr_text).unwrap();
 
             assert_eq!(
                 options,
                 vec![
-                    "Skip this document",
-                    "Create new author",
+                    AUTHOR_OPTION_SKIP,
+                    AUTHOR_OPTION_CREATE,
+                    AUTHOR_OPTION_SEPARATOR,
                     "Alice",
                     "bob",
                     "zara"
