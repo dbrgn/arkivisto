@@ -178,6 +178,7 @@ impl OcrText {
     pub fn matching_authors<'a>(&self, authors: &'a [Author]) -> Vec<&'a Author> {
         authors
             .iter()
+            .filter(|author| !author.include_keywords.is_empty()) // Include keywords must be set for a match
             .filter(|author| {
                 self.matches_keywords(&author.include_keywords, &author.exclude_keywords)
             })
@@ -191,6 +192,7 @@ impl OcrText {
     ) -> Vec<&'a DocumentType> {
         document_types
             .iter()
+            .filter(|dt| !dt.include_keywords.is_empty()) // Include keywords must be set for a match
             .filter(|dt| self.matches_keywords(&dt.include_keywords, &dt.exclude_keywords))
             .collect()
     }
