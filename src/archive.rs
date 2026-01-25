@@ -275,6 +275,7 @@ pub fn select_author(config: &mut Config, ocr_text: &OcrText) -> Result<Option<A
 
     let selection = inquire::Select::new("Select author:", options)
         .with_starting_cursor(default_index)
+        .with_page_size(12)
         .prompt()?;
 
     if selection == "Skip this document" {
