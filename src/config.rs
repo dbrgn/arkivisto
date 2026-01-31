@@ -56,7 +56,7 @@ fn default_pdf_viewer() -> String {
 pub struct OcrmypdfConfig {
     /// Language(s) for OCR (e.g., "eng" or "deu+eng")
     ///
-    /// Available languages: eng, chi-sim, deu, fra, osd, por, spa
+    /// Available languages: eng, chi-sim, deu, fra, por, spa
     pub language: String,
 }
 

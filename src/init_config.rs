@@ -45,10 +45,6 @@ const OCR_LANGUAGES: &[OcrLanguage] = &[
         name: "Spanish",
         code: "spa",
     },
-    OcrLanguage {
-        name: "Orientation and script detection",
-        code: "osd",
-    },
 ];
 
 /// PDF viewer option
