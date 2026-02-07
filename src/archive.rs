@@ -29,6 +29,18 @@ const MONTHS: [&str; 12] = [
     "jan", "feb", "mär", "apr", "mai", "jun", "jul", "aug", "sep", "okt", "nov", "dez",
 ];
 
+/// Resolution strategy when the target file already exists.
+enum ConflictResolution {
+    /// Rename the file by appending a number (e.g., .2, .3, etc.)
+    RenameTo(PathBuf),
+    /// Overwrite the existing file
+    Overwrite,
+    /// Discard the scan and delete the scan directory
+    Discard,
+    /// Skip archiving and preserve the scan directory for later
+    Skip,
+}
+
 /// OCR text extracted from a scanned document.
 ///
 /// This newtype wraps the raw OCR text and provides methods for extracting
@@ -663,6 +675,74 @@ pub fn get_keywords(author: &Author, document_type: &DocumentType) -> Result<Has
     Ok(keywords)
 }
 
+/// Given a path that already exists, returns a new path with a number appended.
+///
+/// For example: `/foo/myfile.pdf` -> `/foo/myfile.2.pdf`
+///
+/// If the numbered path also exists, increments the number until a free slot is found.
+fn next_available_path(path: &Path) -> PathBuf {
+    let parent = path.parent();
+    let extension = path.extension();
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+
+    let mut counter = 2;
+    loop {
+        let new_name = match extension {
+            Some(ext) => format!("{}.{}.{}", stem, counter, ext.to_string_lossy()),
+            None => format!("{}.{}", stem, counter),
+        };
+
+        let new_path = if let Some(p) = parent {
+            p.join(new_name)
+        } else {
+            PathBuf::from(new_name)
+        };
+
+        if !new_path.exists() {
+            return new_path;
+        }
+
+        counter += 1;
+    }
+}
+
+/// Prompt the user for a conflict resolution strategy when the target file already exists.
+fn resolve_conflict(output_path: &Path) -> Result<ConflictResolution> {
+    let original_filename = output_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| anyhow::anyhow!("Could not determine original filename"))?;
+    let renamed_path = next_available_path(output_path);
+    let renamed_filename = renamed_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| anyhow::anyhow!("Could not determine renamed filename"))?;
+
+    let option_rename = format!("Save as \"{}\"", renamed_filename);
+    let option_overwrite = format!("Overwrite \"{}\"", original_filename);
+    let option_discard = "Discard scan".to_string();
+    let option_skip = "Skip scan (preserve for later)".to_string();
+
+    let selection = inquire::Select::new(
+        "File already exists. What do you want to do?",
+        vec![
+            option_rename.clone(),
+            option_overwrite.clone(),
+            option_discard.clone(),
+            option_skip.clone(),
+        ],
+    )
+    .prompt()?;
+
+    match selection {
+        s if s == option_rename => Ok(ConflictResolution::RenameTo(renamed_path)),
+        s if s == option_overwrite => Ok(ConflictResolution::Overwrite),
+        s if s == option_discard => Ok(ConflictResolution::Discard),
+        s if s == option_skip => Ok(ConflictResolution::Skip),
+        other => bail!(format!("Invalid selection: {:?}", other)),
+    }
+}
+
 /// Generate a sanitized filename from title and date.
 ///
 /// Format: `{date}-{title}.pdf`
@@ -902,16 +982,35 @@ pub fn archive_document(
             return Ok(());
         }
 
-        // Check if file already exists
-        if output_path.exists() {
-            let overwrite = inquire::Confirm::new("File already exists. Overwrite?")
-                .with_default(false)
-                .prompt()?;
-            if !overwrite {
-                println!("Document \"{title}\" skipped");
-                return Ok(());
+        // Check if file already exists and resolve conflicts
+        let output_path = if output_path.exists() {
+            match resolve_conflict(&output_path)? {
+                ConflictResolution::RenameTo(new_path) => {
+                    println!("Saving to {}", new_path.display());
+                    new_path
+                }
+                ConflictResolution::Overwrite => {
+                    println!("Overwriting {}", output_path.display());
+                    output_path
+                }
+                ConflictResolution::Discard => {
+                    fs::remove_dir_all(document_dir).with_context(|| {
+                        format!(
+                            "Failed to remove processed directory: {}",
+                            document_dir.display()
+                        )
+                    })?;
+                    println!("Document \"{title}\" discarded");
+                    return Ok(());
+                }
+                ConflictResolution::Skip => {
+                    println!("Document \"{title}\" skipped");
+                    return Ok(());
+                }
             }
-        }
+        } else {
+            output_path
+        };
 
         // Create output directory if needed
         if let Some(parent) = output_path.parent() {
@@ -940,7 +1039,9 @@ pub fn archive_document(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::{collections::HashSet, fs::File};
+
+    use tempfile::TempDir;
 
     use super::*;
 
@@ -1258,6 +1359,45 @@ mod tests {
             let date = NaiveDate::from_ymd_opt(2023, 5, 15).unwrap();
             let result = generate_filename("Test   Multiple   Spaces", date);
             assert_eq!(result, "2023-05-15-test-multiple-spaces.pdf");
+        }
+    }
+
+    mod next_available_path {
+        use super::*;
+
+        #[test]
+        fn basic_rename() {
+            let temp_dir = TempDir::new().unwrap();
+            let existing_file = temp_dir.path().join("myfile.pdf");
+            File::create(&existing_file).unwrap();
+
+            let result = next_available_path(&existing_file);
+
+            assert_eq!(result, temp_dir.path().join("myfile.2.pdf"));
+        }
+
+        #[test]
+        fn increments_past_existing() {
+            let temp_dir = TempDir::new().unwrap();
+            let existing_file = temp_dir.path().join("myfile.pdf");
+            File::create(&existing_file).unwrap();
+            File::create(temp_dir.path().join("myfile.2.pdf")).unwrap();
+            File::create(temp_dir.path().join("myfile.3.pdf")).unwrap();
+
+            let result = next_available_path(&existing_file);
+
+            assert_eq!(result, temp_dir.path().join("myfile.4.pdf"));
+        }
+
+        #[test]
+        fn no_extension() {
+            let temp_dir = TempDir::new().unwrap();
+            let existing_file = temp_dir.path().join("myfile");
+            File::create(&existing_file).unwrap();
+
+            let result = next_available_path(&existing_file);
+
+            assert_eq!(result, temp_dir.path().join("myfile.2"));
         }
     }
 }
