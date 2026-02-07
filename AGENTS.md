@@ -8,6 +8,7 @@ Read `README.md` for a general overview.
   physical devices. Just rely on `cargo check` and unit tests.
 - If a bigger design decision is required, please ask for clarification before
   just picking an option.
+- Do not remove existing block comments without good reason
 
 ## Conventions
 
