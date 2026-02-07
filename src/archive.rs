@@ -454,8 +454,11 @@ pub fn select_document_type(
     }
 
     if selection == "Create new document type" {
-        let document_type = create_document_type(config, author)?;
-        return Ok(document_type);
+        match create_document_type(config, author) {
+            Ok(document_type) => return Ok(document_type),
+            Err(e) if is_cancel_error(&e) => return select_document_type(config, author, ocr_text),
+            Err(e) => return Err(e),
+        }
     }
 
     // Find selected document type
