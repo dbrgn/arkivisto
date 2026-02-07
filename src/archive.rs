@@ -14,6 +14,7 @@ use std::{
 
 use anyhow::{Context, Result, anyhow, bail};
 use chrono::NaiveDate;
+use inquire::error::InquireError;
 use regex::Regex;
 use tracing::{debug, trace, warn};
 
@@ -327,6 +328,14 @@ pub fn select_author(config: &mut Config, ocr_text: &OcrText) -> Result<Option<A
         .ok_or_else(|| anyhow!("Author not found: {}", author_name))?;
 
     Ok(Some(author))
+}
+
+/// Check if an error is an `OperationCanceled` error from inquire.
+fn is_cancel_error(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<InquireError>()
+        .map(|e| matches!(e, InquireError::OperationCanceled))
+        .unwrap_or(false)
 }
 
 /// Prompt user to create a new author and add it to the config.
@@ -827,92 +836,100 @@ pub fn archive_document(
         }
     }
 
-    // Select author
-    let author = match select_author(config, &ocr_text)? {
-        Some(a) => a,
-        None => {
-            println!("Document skipped");
-            return Ok(());
-        }
-    };
+    // Select author and document type in a loop to allow going back
+    loop {
+        let author = match select_author(config, &ocr_text)? {
+            Some(a) => a,
+            None => {
+                println!("Document skipped");
+                return Ok(());
+            }
+        };
 
-    // Select document type
-    let document_type = select_document_type(config, &author, &ocr_text)?;
+        let document_type = match select_document_type(config, &author, &ocr_text) {
+            Ok(dt) => dt,
+            Err(e) if is_cancel_error(&e) => {
+                continue;
+            }
+            Err(e) => return Err(e),
+        };
 
-    // Get title
-    let title = get_title(&document_type, &ocr_text)?;
+        // Get title
+        let title = get_title(&document_type, &ocr_text)?;
 
-    // Get date
-    let date = get_date(&document_type, &ocr_text)?;
+        // Get date
+        let date = get_date(&document_type, &ocr_text)?;
 
-    // Get keywords
-    let keywords = get_keywords(&author, &document_type)?;
+        // Get keywords
+        let keywords = get_keywords(&author, &document_type)?;
 
-    // Generate filename and path
-    let filename = generate_filename(&title, date);
-    let output_path = build_output_path(config, &author, &document_type, &filename);
+        // Generate filename and path
+        let filename = generate_filename(&title, date);
+        let output_path = build_output_path(config, &author, &document_type, &filename);
 
-    // Prepare metadata
-    let metadata = PdfMetadata {
-        title: title.clone(),
-        create_date: date,
-        keywords: Vec::from_iter(keywords),
-    };
+        // Prepare metadata
+        let metadata = PdfMetadata {
+            title: title.clone(),
+            create_date: date,
+            keywords: Vec::from_iter(keywords),
+        };
 
-    // Create output PDF with metadata
-    let final_output = document_dir.join(filenames::FINAL_PDF);
-    set_pdf_metadata(&pdf_path, &final_output, &metadata)?;
+        // Create output PDF with metadata
+        let final_output = document_dir.join(filenames::FINAL_PDF);
+        set_pdf_metadata(&pdf_path, &final_output, &metadata)?;
 
-    // Update preview with final metadata
-    fs::copy(&final_output, &preview_path)?;
-    debug!(
-        "Preview updated with metadata at: {}",
-        preview_path.display()
-    );
+        // Update preview with final metadata
+        fs::copy(&final_output, &preview_path)?;
+        debug!(
+            "Preview updated with metadata at: {}",
+            preview_path.display()
+        );
 
-    // Confirm save
-    trace!("Output path: {}", output_path.display());
-    let confirm = inquire::Confirm::new(&format!("Save to {}?", output_path.display()))
-        .with_default(true)
-        .prompt()?;
-
-    if !confirm {
-        println!("Document \"{title}\" skipped");
-        return Ok(());
-    }
-
-    // Check if file already exists
-    if output_path.exists() {
-        let overwrite = inquire::Confirm::new("File already exists. Overwrite?")
-            .with_default(false)
+        // Confirm save
+        trace!("Output path: {}", output_path.display());
+        let confirm = inquire::Confirm::new(&format!("Save to {}?", output_path.display()))
+            .with_default(true)
             .prompt()?;
-        if !overwrite {
+
+        if !confirm {
             println!("Document \"{title}\" skipped");
             return Ok(());
         }
+
+        // Check if file already exists
+        if output_path.exists() {
+            let overwrite = inquire::Confirm::new("File already exists. Overwrite?")
+                .with_default(false)
+                .prompt()?;
+            if !overwrite {
+                println!("Document \"{title}\" skipped");
+                return Ok(());
+            }
+        }
+
+        // Create output directory if needed
+        if let Some(parent) = output_path.parent() {
+            fs::create_dir_all(parent).with_context(|| {
+                format!("Failed to create output directory: {}", parent.display())
+            })?;
+        }
+
+        // Copy to output path
+        fs::copy(&final_output, &output_path)
+            .with_context(|| format!("Failed to copy PDF to {}", output_path.display()))?;
+
+        // Remove processed directory
+        fs::remove_dir_all(document_dir).with_context(|| {
+            format!(
+                "Failed to remove processed directory: {}",
+                document_dir.display()
+            )
+        })?;
+
+        println!("Document \"{title}\" archived successfully");
+
+        return Ok(());
     }
-
-    // Create output directory if needed
-    if let Some(parent) = output_path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("Failed to create output directory: {}", parent.display()))?;
-    }
-
-    // Copy to output path
-    fs::copy(&final_output, &output_path)
-        .with_context(|| format!("Failed to copy PDF to {}", output_path.display()))?;
-
-    // Remove processed directory
-    fs::remove_dir_all(document_dir).with_context(|| {
-        format!(
-            "Failed to remove processed directory: {}",
-            document_dir.display()
-        )
-    })?;
-
-    println!("Document \"{title}\" archived successfully");
-
-    Ok(())
 }
 
 #[cfg(test)]
