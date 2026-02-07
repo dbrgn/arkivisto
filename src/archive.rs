@@ -314,8 +314,11 @@ pub fn select_author(config: &mut Config, ocr_text: &OcrText) -> Result<Option<A
         return Ok(None);
     }
     if selection == AUTHOR_OPTION_CREATE {
-        let author = create_author(config)?;
-        return Ok(Some(author));
+        match create_author(config) {
+            Ok(author) => return Ok(Some(author)),
+            Err(e) if is_cancel_error(&e) => return select_author(config, ocr_text),
+            Err(e) => return Err(e),
+        }
     }
 
     // Find selected author
