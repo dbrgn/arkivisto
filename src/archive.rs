@@ -517,7 +517,7 @@ fn create_document_type(config: &mut Config, author: &Author) -> Result<Document
         .filter(|s| !s.is_empty())
         .collect();
 
-    let directory = inquire::Text::new("Output subdirectory name (leave empty for none):")
+    let directory = inquire::Text::new("Output subdirectory name or path (leave empty for none):")
         .prompt()?
         .trim()
         .to_string();
