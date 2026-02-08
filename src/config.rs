@@ -9,8 +9,8 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, trace};
 
-const DEFAULT_RESOLUTION_NORMAL: u16 = 300;
-const DEFAULT_RESOLUTION_HIGH: u16 = 600;
+pub const DEFAULT_RESOLUTION_NORMAL: u16 = 300;
+pub const DEFAULT_RESOLUTION_HIGH: u16 = 600;
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Config {
