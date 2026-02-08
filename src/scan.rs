@@ -308,7 +308,7 @@ pub fn scan_document(context: &ScanContext) -> Result<PathBuf> {
     let scan_mode_options = ScanMode::options(scanner);
     let mut mode = inquire::Select::new("How to scan?", scan_mode_options).prompt()?;
 
-    // Determine number of pages to scan
+    // In flatbed mode, determine number of pages to scan
     if matches!(mode, ScanMode::Flatbed { .. }) {
         let page_count = inquire::CustomType::<usize>::new("Number of pages to scan?")
             .with_default(1)

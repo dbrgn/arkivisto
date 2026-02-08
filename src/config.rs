@@ -9,6 +9,9 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, trace};
 
+const DEFAULT_RESOLUTION_NORMAL: u16 = 300;
+const DEFAULT_RESOLUTION_HIGH: u16 = 600;
+
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Config {
     /// Default output directory for archived files
@@ -145,6 +148,10 @@ pub struct Scanner {
     /// Use `scanimage -L` to list all available scanners.
     pub device_name: String,
 
+    /// Scanner resolutions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolutions: Option<ScanResolutions>,
+
     /// Additional arguments passed to scanimage
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub additional_args: Vec<String>,
@@ -187,6 +194,23 @@ impl Scanner {
 impl Display for Scanner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct ScanResolutions {
+    /// Regular scan resolution (defaults to 300 dpi)
+    pub normal: u16,
+    /// High scan resolution (defaults to 600 dpi)
+    pub high: u16,
+}
+
+impl Default for ScanResolutions {
+    fn default() -> Self {
+        Self {
+            normal: DEFAULT_RESOLUTION_NORMAL,
+            high: DEFAULT_RESOLUTION_HIGH,
+        }
     }
 }
 
@@ -335,6 +359,7 @@ scanners:
             let scanner = Scanner {
                 name: "Test Scanner".to_string(),
                 device_name: "test:device".to_string(),
+                resolutions: None,
                 additional_args: vec![],
                 source_adf_single: None,
                 source_adf_duplex: None,
@@ -356,6 +381,7 @@ scanners:
             let scanner = Scanner {
                 name: "Test Scanner".to_string(),
                 device_name: "test:device".to_string(),
+                resolutions: None,
                 additional_args: vec![],
                 source_adf_single: Some("ADF".to_string()),
                 source_adf_duplex: None,

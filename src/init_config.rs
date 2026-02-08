@@ -314,6 +314,7 @@ fn configure_scanner(detected: DetectedScanner) -> Result<Scanner> {
     Ok(Scanner {
         name: detected.description,
         device_name: detected.device_name,
+        resolutions: None,
         additional_args: Vec::new(),
         source_adf_duplex,
         source_adf_single,
