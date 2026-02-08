@@ -1,10 +1,10 @@
-use std::{path::PathBuf, process::Command, time::Duration};
+use std::{num::ParseIntError, path::PathBuf, process::Command, time::Duration};
 
 use anyhow::{Context, Result};
 use indicatif::ProgressBar;
-use tracing::trace;
+use tracing::{trace, warn};
 
-use crate::config::{Config, OcrmypdfConfig, Scanner, Tools};
+use crate::config::{Config, OcrmypdfConfig, ScanResolutions, Scanner, Tools};
 
 /// OCR language option
 #[derive(Debug, Clone)]
@@ -264,7 +264,8 @@ fn detect_scanners() -> Result<Vec<DetectedScanner>> {
 /// Parse output of `scanimage -L`
 /// Format: device `brother4:net1;dev0' is a Brother *brother-mfc9330cdw MFC-9330CDW
 fn parse_scanimage_list(output: &str) -> Result<Vec<DetectedScanner>> {
-    let re = regex::Regex::new(r"device `([^']+)' is a (.+)").context("Failed to compile regex")?;
+    let re = regex::Regex::new(r"device `([^']+)' is a (.+)")
+        .context("Failed to compile device regex")?;
 
     let mut scanners = Vec::new();
     for line in output.lines() {
@@ -281,13 +282,13 @@ fn parse_scanimage_list(output: &str) -> Result<Vec<DetectedScanner>> {
 
 /// Detect sources for a scanner and configure it
 fn configure_scanner(detected: DetectedScanner) -> Result<Scanner> {
-    let sources = detect_sources(&detected.device_name, &detected.description)?;
+    let capabilities = detect_capabilities(&detected.device_name, &detected.description)?;
 
     // Classify sources
     let mut flatbed_options: Vec<&str> = Vec::new();
     let mut adf_duplex_options: Vec<&str> = Vec::new();
     let mut adf_single_options: Vec<&str> = Vec::new();
-    for source in &sources {
+    for source in &capabilities.sources {
         match classify_source(source) {
             Some(SourceType::Flatbed) => flatbed_options.push(source),
             Some(SourceType::AdfDuplex) => adf_duplex_options.push(source),
@@ -311,10 +312,32 @@ fn configure_scanner(detected: DetectedScanner) -> Result<Scanner> {
     let source_adf_single = select_source_option("ADF single-sided", adf_single_options)?;
     let source_adf_duplex = select_source_option("ADF duplex", adf_duplex_options)?;
 
+    // Determine resolutions
+    let resolutions = if capabilities.resolutions.is_empty() {
+        None
+    } else {
+        let resolution_normal = select_preferred(
+            &capabilities.resolutions,
+            &[300, 200],
+            *capabilities.resolutions.first().unwrap(),
+            "normal",
+        );
+        let resolution_high = select_preferred(
+            &capabilities.resolutions,
+            &[600, 1200, 400],
+            *capabilities.resolutions.last().unwrap(),
+            "high",
+        );
+        Some(ScanResolutions {
+            normal: resolution_normal,
+            high: resolution_high,
+        })
+    };
+
     Ok(Scanner {
         name: detected.description,
         device_name: detected.device_name,
-        resolutions: None,
+        resolutions,
         additional_args: Vec::new(),
         source_adf_duplex,
         source_adf_single,
@@ -322,8 +345,16 @@ fn configure_scanner(detected: DetectedScanner) -> Result<Scanner> {
     })
 }
 
-/// Detect available sources for a scanner
-fn detect_sources(device_name: &str, description: &str) -> Result<Vec<String>> {
+struct ScannerCapabilities {
+    sources: Vec<String>,
+    resolutions: Vec<u16>,
+}
+
+/// Detect capabilities for a scanner:
+///
+/// - Available sources
+/// - Available resolutions
+fn detect_capabilities(device_name: &str, description: &str) -> Result<ScannerCapabilities> {
     let spinner = ProgressBar::new_spinner()
         .with_message(format!("Detecting sources for '{}'...", description));
     spinner.enable_steady_tick(Duration::from_millis(100));
@@ -338,12 +369,19 @@ fn detect_sources(device_name: &str, description: &str) -> Result<Vec<String>> {
     spinner.finish_and_clear();
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    parse_source_options(&stdout)
+    let sources = parse_source_options(&stdout)?;
+    let resolutions = parse_resolution_options(&stdout)?;
+
+    Ok(ScannerCapabilities {
+        sources,
+        resolutions,
+    })
 }
 
 /// Parse `--source` options from `scanimage -d DEVICE --help` output
 fn parse_source_options(output: &str) -> Result<Vec<String>> {
-    let re = regex::Regex::new(r"--source\s+([^\[]+)\s*\[").context("Failed to compile regex")?;
+    let re =
+        regex::Regex::new(r"--source\s+([^\[]+)\s*\[").context("Failed to compile source regex")?;
 
     for line in output.lines() {
         if let Some(caps) = re.captures(line) {
@@ -406,6 +444,26 @@ fn ask_source_classification(source: &str) -> Result<Option<SourceType>> {
     }
 }
 
+/// Select the first value from `preferred` that exists in `available`,
+/// or fall back to `fallback` with a warning.
+fn select_preferred<T: Copy + PartialEq + std::fmt::Debug>(
+    available: &[T],
+    preferred: &[T],
+    fallback: T,
+    label: &str,
+) -> T {
+    for &candidate in preferred {
+        if available.contains(&candidate) {
+            return candidate;
+        }
+    }
+    warn!(
+        "Could not determine {} scan resolution. Falling back to {:?}. Options: {:?}",
+        label, fallback, available,
+    );
+    fallback
+}
+
 /// If multiple options exist for a source type, ask user to choose
 fn select_source_option(source_type_name: &str, options: Vec<&str>) -> Result<Option<String>> {
     match options.len() {
@@ -423,6 +481,31 @@ fn select_source_option(source_type_name: &str, options: Vec<&str>) -> Result<Op
             Ok(Some(answer))
         }
     }
+}
+
+/// Parse `--resolution` options from `scanimage -d DEVICE --help` output
+fn parse_resolution_options(output: &str) -> Result<Vec<u16>> {
+    let re = regex::Regex::new(r"--resolution\s+([^\[]+)\s*\[")
+        .context("Failed to compile resolution regex")?;
+
+    for line in output.lines() {
+        if let Some(caps) = re.captures(line) {
+            trace!("Parsing resolutions: {:?}", line);
+            let options_str = caps[1].trim();
+            let mut options_u16 = options_str
+                .split('|')
+                .map(|s| {
+                    let trimmed = s.trim();
+                    let dpi_stripped = trimmed.trim_end_matches("dpi");
+                    dpi_stripped.parse().map_err(|e: ParseIntError| e.into())
+                })
+                .collect::<Result<Vec<u16>>>()?;
+            options_u16.sort();
+            return Ok(options_u16);
+        }
+    }
+
+    Ok(Vec::new()) // No --resolution option found
 }
 
 #[cfg(test)]
@@ -547,6 +630,57 @@ Another line that doesn't match
         #[case("")]
         fn returns_none_for_ambiguous(#[case] input: &str) {
             assert_eq!(classify_source(input), None);
+        }
+    }
+
+    mod parse_resolution_options {
+        use super::*;
+
+        #[test]
+        fn parses_brother_scanner_resolutions() {
+            let output = include_str!("snapshots/scanimage-help-brother.txt");
+            let result = parse_resolution_options(output).unwrap();
+
+            assert_eq!(
+                result,
+                vec![100, 150, 200, 300, 400, 600, 1200, 2400, 4800, 9600]
+            );
+        }
+
+        #[test]
+        fn handles_empty_output() {
+            let output = "";
+            let result = parse_resolution_options(output).unwrap();
+
+            assert!(result.is_empty());
+        }
+    }
+
+    mod select_preferred {
+        use super::*;
+
+        #[test]
+        fn returns_first_preferred_match() {
+            let available = vec![100, 200, 300, 600];
+            assert_eq!(select_preferred(&available, &[300, 200], 100, "test"), 300);
+        }
+
+        #[test]
+        fn returns_second_preferred_if_first_missing() {
+            let available = vec![100, 200, 400];
+            assert_eq!(select_preferred(&available, &[300, 200], 100, "test"), 200);
+        }
+
+        #[test]
+        fn returns_fallback_when_no_preferred_found() {
+            let available = vec![100, 150, 500];
+            assert_eq!(select_preferred(&available, &[300, 200], 100, "test"), 100);
+        }
+
+        #[test]
+        fn works_with_empty_preferred() {
+            let available = vec![100, 200, 300];
+            assert_eq!(select_preferred(&available, &[], 42, "test"), 42);
         }
     }
 }
