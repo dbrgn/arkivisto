@@ -2,11 +2,11 @@
 source: src/args.rs
 expression: help
 ---
-Usage: arkivisto [OPTIONS] [MODE]
+Usage: arkivisto [OPTIONS] <MODE>
 
 Arguments:
-  [MODE]
-          Processing mode [default: single] [possible values: scan, process, archive, single, init-config]
+  <MODE>
+          Processing mode [possible values: scan, process, archive, single, init-config]
 
 Options:
   -l, --log-level <LOG_LEVEL>

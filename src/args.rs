@@ -37,13 +37,12 @@ impl std::fmt::Display for LogLevel {
     }
 }
 
-#[derive(Debug, Clone, ValueEnum, Default)]
+#[derive(Debug, Clone, ValueEnum)]
 #[cfg_attr(test, derive(serde::Serialize))]
 pub enum Mode {
     Scan,
     Process,
     Archive,
-    #[default]
     Single,
     InitConfig,
 }
@@ -54,7 +53,7 @@ pub enum Mode {
 #[command(next_line_help = true)]
 pub struct Args {
     /// Processing mode
-    #[arg(value_enum, default_value_t = Mode::default())]
+    #[arg(value_enum)]
     pub mode: Mode,
 
     /// Log level
@@ -70,7 +69,6 @@ pub struct Args {
 #[cfg(test)]
 mod tests {
     use clap::CommandFactory;
-    use insta::assert_yaml_snapshot;
 
     use super::{Args, LogLevel, Mode};
 
@@ -92,12 +90,6 @@ mod tests {
         use rstest::rstest;
 
         use super::*;
-
-        #[test]
-        fn default_args() {
-            let args = Args::parse_from(["arkivisto"]);
-            assert_yaml_snapshot!(args);
-        }
 
         #[test]
         fn scan_mode() {
@@ -123,12 +115,6 @@ mod tests {
             assert!(matches!(args.mode, Mode::Single));
         }
 
-        #[test]
-        fn custom_log_level() {
-            let args = Args::parse_from(["arkivisto", "-l", "debug"]);
-            assert!(matches!(args.log_level, LogLevel::Debug));
-        }
-
         #[rstest]
         #[case("trace", LogLevel::Trace)]
         #[case("debug", LogLevel::Debug)]
@@ -136,7 +122,7 @@ mod tests {
         #[case("warn", LogLevel::Warn)]
         #[case("error", LogLevel::Error)]
         fn log_level(#[case] input: &str, #[case] expected: LogLevel) {
-            let args = Args::parse_from(["arkivisto", "-l", input]);
+            let args = Args::parse_from(["arkivisto", "scan", "-l", input]);
             assert!(
                 matches!(args.log_level, ref level if std::mem::discriminant(level) == std::mem::discriminant(&expected))
             );
@@ -158,7 +144,7 @@ mod tests {
 
         #[test]
         fn invalid_log_level() {
-            let result = Args::try_parse_from(["arkivisto", "-l", "invalid"]);
+            let result = Args::try_parse_from(["arkivisto", "scan", "-l", "invalid"]);
             let err = result.unwrap_err();
             assert_snapshot!(err.to_string());
         }
