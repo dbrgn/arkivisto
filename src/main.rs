@@ -106,7 +106,7 @@ fn main() -> Result<()> {
         Mode::Single => {
             // Scan, process and archive single document
             let scan_context = get_scan_context()?;
-            let document_dir = scan::scan_document(&scan_context)?;
+            let (document_dir, _) = scan::scan_document(&scan_context, None)?;
             process::process_document(&document_dir, &config, None)
                 .context("Failed to post-process document")?;
             archive::archive_document(&mut config, &document_dir, &scans_dir, true)
@@ -115,8 +115,11 @@ fn main() -> Result<()> {
         Mode::Scan => {
             // Scan documents in a loop
             let scan_context = get_scan_context()?;
+            let mut last_scan_mode_index = None;
             loop {
-                let document_dir = scan::scan_document(&scan_context)?;
+                let (document_dir, selected_index) =
+                    scan::scan_document(&scan_context, last_scan_mode_index)?;
+                last_scan_mode_index = Some(selected_index);
                 println!("Scanned document to {}", document_dir.display());
             }
         }

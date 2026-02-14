@@ -308,8 +308,15 @@ pub struct ScanContext<'a> {
     pub scans_dir: &'a Path,
 }
 
-/// Scan a document, return output path
-pub fn scan_document(context: &ScanContext) -> Result<PathBuf> {
+/// Scan a document, return output path and the index of the chosen scan mode.
+///
+/// If `default_mode_index` is provided, the "How to scan?" prompt will
+/// pre-select that option (useful for remembering the previous choice
+/// across consecutive scans).
+pub fn scan_document(
+    context: &ScanContext,
+    default_mode_index: Option<usize>,
+) -> Result<(PathBuf, usize)> {
     let scanner = &context.scanner;
 
     // Ensure that "current" scan directory exists and is empty
@@ -319,9 +326,16 @@ pub fn scan_document(context: &ScanContext) -> Result<PathBuf> {
     // Determine scan mode
     let scan_mode_options = ScanMode::options(scanner);
     let scan_mode_option_count = scan_mode_options.len();
-    let mut mode = inquire::Select::new("How to scan?", scan_mode_options)
-        .with_page_size(scan_mode_option_count)
-        .prompt()?;
+    let mut select = inquire::Select::new("How to scan?", scan_mode_options)
+        .with_page_size(scan_mode_option_count);
+    if let Some(index) = default_mode_index
+        && index < scan_mode_option_count
+    {
+        select = select.with_starting_cursor(index);
+    }
+    let selection = select.raw_prompt()?;
+    let selected_mode_index = selection.index;
+    let mut mode = selection.value;
 
     // In flatbed mode, determine number of pages to scan
     if let ScanMode::Flatbed { dpi, .. } = mode {
@@ -348,5 +362,5 @@ pub fn scan_document(context: &ScanContext) -> Result<PathBuf> {
     let new_dir = context.scans_dir.join(timestamp);
     fs::rename(&current_scan_dir, &new_dir)?;
 
-    Ok(new_dir)
+    Ok((new_dir, selected_mode_index))
 }
