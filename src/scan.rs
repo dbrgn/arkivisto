@@ -11,7 +11,7 @@ use tracing::{debug, trace, warn};
 
 use crate::{
     common::{self, CheckDependencyResult},
-    config::Scanner,
+    config::{DEFAULT_RESOLUTION_NORMAL, Scanner},
     fs_utils,
 };
 
@@ -31,19 +31,30 @@ pub fn check_dependencies() -> CheckDependencyResult {
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum ScanMode {
-    AdfSingleSided,
-    AdfDuplex,
-    AdfManualDuplex,
-    Flatbed { page_count: usize },
+    AdfSingleSided { dpi: Option<u16> },
+    AdfDuplex { dpi: Option<u16> },
+    AdfManualDuplex { dpi: Option<u16> },
+    Flatbed { dpi: Option<u16>, page_count: usize },
 }
 
 impl Display for ScanMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ScanMode::AdfSingleSided => write!(f, "ADF single sided"),
-            ScanMode::AdfDuplex => write!(f, "ADF duplex"),
-            ScanMode::AdfManualDuplex => write!(f, "ADF manual duplex"),
-            ScanMode::Flatbed { .. } => write!(f, "Flatbed"),
+            // Default resolution
+            ScanMode::AdfSingleSided { dpi: None } => write!(f, "ADF single sided"),
+            ScanMode::AdfDuplex { dpi: None } => write!(f, "ADF duplex"),
+            ScanMode::AdfManualDuplex { dpi: None } => write!(f, "ADF manual duplex"),
+            ScanMode::Flatbed { dpi: None, .. } => write!(f, "Flatbed"),
+
+            // Explicit resolution
+            ScanMode::AdfSingleSided { dpi: Some(dpi) } => {
+                write!(f, "ADF single sided ({dpi} dpi)")
+            }
+            ScanMode::AdfDuplex { dpi: Some(dpi) } => write!(f, "ADF duplex ({dpi} dpi)"),
+            ScanMode::AdfManualDuplex { dpi: Some(dpi) } => {
+                write!(f, "ADF manual duplex ({dpi} dpi)")
+            }
+            ScanMode::Flatbed { dpi: Some(dpi), .. } => write!(f, "Flatbed ({dpi} dpi)"),
         }
     }
 }
@@ -51,37 +62,27 @@ impl Display for ScanMode {
 impl ScanMode {
     fn options(scanner: &Scanner) -> Vec<Self> {
         let mut options = Vec::new();
-        if scanner.source_adf_single.is_some() {
-            options.push(ScanMode::AdfSingleSided);
-        }
-        if scanner.source_adf_duplex.is_some() {
-            options.push(ScanMode::AdfDuplex);
-        }
-        if scanner.source_adf_single.is_some() {
-            options.push(ScanMode::AdfManualDuplex);
-        }
-        if scanner.source_flatbed.is_some() {
-            options.push(ScanMode::Flatbed { page_count: 0 });
+        for resolution in [
+            None,
+            Some(scanner.resolutions.clone().unwrap_or_default().high),
+        ] {
+            if scanner.source_adf_single.is_some() {
+                options.push(ScanMode::AdfSingleSided { dpi: resolution });
+            }
+            if scanner.source_adf_duplex.is_some() {
+                options.push(ScanMode::AdfDuplex { dpi: resolution });
+            }
+            if scanner.source_adf_single.is_some() {
+                options.push(ScanMode::AdfManualDuplex { dpi: resolution });
+            }
+            if scanner.source_flatbed.is_some() {
+                options.push(ScanMode::Flatbed {
+                    dpi: resolution,
+                    page_count: 0,
+                });
+            }
         }
         options
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
-enum Resolution {
-    /// 300 DPI
-    #[default]
-    Normal,
-    /// 600 DPI
-    High,
-}
-
-impl Resolution {
-    fn as_dpi(&self) -> u32 {
-        match self {
-            Resolution::Normal => 300,
-            Resolution::High => 600,
-        }
     }
 }
 
@@ -89,12 +90,7 @@ impl Resolution {
 ///
 /// Scanned files will be stored as TIF files in the scans cache directory. The
 /// filename contains a number starting at 1000.
-fn run_scanimage(
-    current_scan_dir: &Path,
-    context: &ScanContext,
-    mode: &ScanMode,
-    resolution: &Resolution,
-) -> Result<()> {
+fn run_scanimage(current_scan_dir: &Path, context: &ScanContext, mode: &ScanMode) -> Result<()> {
     debug!("Scanning to {}", current_scan_dir.display());
 
     // TODO: Manual duplex
@@ -114,19 +110,28 @@ fn run_scanimage(
 
     // Determine source string
     let source = match mode {
-        ScanMode::AdfSingleSided => get_source!(source_adf_single, "ADF single-sided"),
-        ScanMode::AdfDuplex => get_source!(source_adf_duplex, "ADF duplex"),
-        ScanMode::AdfManualDuplex => get_source!(source_adf_single, "ADF manual duplex"),
+        ScanMode::AdfSingleSided { .. } => get_source!(source_adf_single, "ADF single-sided"),
+        ScanMode::AdfDuplex { .. } => get_source!(source_adf_duplex, "ADF duplex"),
+        ScanMode::AdfManualDuplex { .. } => get_source!(source_adf_single, "ADF manual duplex"),
         ScanMode::Flatbed { .. } => get_source!(source_flatbed, "Flatbed"),
     }?;
 
     // Call scanimage
     match mode {
-        ScanMode::AdfSingleSided | ScanMode::AdfDuplex | ScanMode::AdfManualDuplex => {
+        ScanMode::AdfSingleSided { dpi }
+        | ScanMode::AdfDuplex { dpi }
+        | ScanMode::AdfManualDuplex { dpi } => {
             // Scan all available pages from ADF
-            _scanimage(current_scan_dir, context, source, 0, None, resolution)?;
+            _scanimage(
+                current_scan_dir,
+                context,
+                source,
+                0,
+                None,
+                dpi.unwrap_or(DEFAULT_RESOLUTION_NORMAL),
+            )?;
         }
-        ScanMode::Flatbed { page_count } => {
+        ScanMode::Flatbed { dpi, page_count } => {
             assert!(
                 *page_count > 0,
                 "Page count is 0, this indicates an internal logic bug"
@@ -143,7 +148,14 @@ fn run_scanimage(
                 if !scan_next_page {
                     return Err(anyhow!("Scan aborted by user"));
                 }
-                _scanimage(current_scan_dir, context, source, i, Some(1), resolution)?;
+                _scanimage(
+                    current_scan_dir,
+                    context,
+                    source,
+                    i,
+                    Some(1),
+                    dpi.unwrap_or(DEFAULT_RESOLUTION_NORMAL),
+                )?;
             }
         }
     }
@@ -168,14 +180,14 @@ fn run_scanimage(
 ///     The number of pages to scan. If this is `None`, no count will be passed
 ///     to `scanimage` (i.e. all available pages will be scanned).
 ///   resolution:
-///     The resolution of the scanned pages.
+///     The resolution of the scanned pages in DPI.
 fn _scanimage(
     current_scan_dir: &Path,
     context: &ScanContext,
     source: &str,
     start: usize,
     count: Option<usize>,
-    resolution: &Resolution,
+    resolution_dpi: u16,
 ) -> Result<()> {
     let mut args = Vec::new();
 
@@ -191,7 +203,7 @@ fn _scanimage(
     }
 
     // Common scanner-specific parameters for which we assume support by all scanners
-    args.push(format!("--resolution={}", resolution.as_dpi()));
+    args.push(format!("--resolution={}", resolution_dpi));
     args.push("-x".into());
     args.push("210".into());
     args.push("-y".into());
@@ -306,10 +318,13 @@ pub fn scan_document(context: &ScanContext) -> Result<PathBuf> {
 
     // Determine scan mode
     let scan_mode_options = ScanMode::options(scanner);
-    let mut mode = inquire::Select::new("How to scan?", scan_mode_options).prompt()?;
+    let scan_mode_option_count = scan_mode_options.len();
+    let mut mode = inquire::Select::new("How to scan?", scan_mode_options)
+        .with_page_size(scan_mode_option_count)
+        .prompt()?;
 
-    // Determine number of pages to scan
-    if matches!(mode, ScanMode::Flatbed { .. }) {
+    // In flatbed mode, determine number of pages to scan
+    if let ScanMode::Flatbed { dpi, .. } = mode {
         let page_count = inquire::CustomType::<usize>::new("Number of pages to scan?")
             .with_default(1)
             .with_validator(|input: &usize| {
@@ -321,29 +336,11 @@ pub fn scan_document(context: &ScanContext) -> Result<PathBuf> {
             })
             .with_error_message("Please enter a valid number ≥ 1")
             .prompt()?;
-        mode = ScanMode::Flatbed { page_count };
+        mode = ScanMode::Flatbed { dpi, page_count };
     };
-
-    // Determine scan options
-    let option_highdpi = "High resolution (600dpi instead of 300dpi)";
-    let options = inquire::MultiSelect::new(
-        "Choose options (if desired) and press enter to start scanning!",
-        vec![option_highdpi],
-    )
-    .prompt()?;
-    let resolution = if options.contains(&option_highdpi) {
-        Resolution::High
-    } else {
-        Resolution::Normal
-    };
-    trace!(
-        "Using resolution {:?} ({}dpi)",
-        resolution,
-        resolution.as_dpi()
-    );
 
     // Run `scanimage` binary
-    run_scanimage(&current_scan_dir, context, &mode, &resolution)
+    run_scanimage(&current_scan_dir, context, &mode)
         .context("Failed to run `scanimage` command")?;
 
     // Rename current scan directory
