@@ -7,8 +7,6 @@ efficiently.
 
 [![GitHub CI][github-actions-badge]][github-actions]
 
-**ALPHA STATUS! Don't fully trust it yet.**
-
 ## Features
 
 Current implementation status:
@@ -17,7 +15,6 @@ Current implementation status:
 - [x] Support for multiple scanners
 - [x] Scanning all from ADF
 - [x] Scanning multiple pages from flatbed
-- [ ] Scanning multiple pages from mixed sources
 - [x] Postprocessing
 - [x] Archiving
 
@@ -96,3 +93,22 @@ that the binary must be built in debug mode.
 
 [github-actions]: https://github.com/dbrgn/arkivisto/actions?query=branch%3Amain
 [github-actions-badge]: https://github.com/dbrgn/arkivisto/actions/workflows/ci.yml/badge.svg?branch=main
+
+## License
+
+Licensed under the AGPL version 3 or later. See `LICENSE.md` file.
+
+    Copyright (C) Danilo Bargen
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as
+    published by the Free Software Foundation, either version 3 of the
+    License, or (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Affero General Public License for more details.
+
+    You should have received a copy of the GNU Affero General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
