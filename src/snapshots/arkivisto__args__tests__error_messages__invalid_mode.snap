@@ -2,7 +2,8 @@
 source: src/args.rs
 expression: err.to_string()
 ---
-error: invalid value 'invalid_mode' for '<MODE>'
-  [possible values: scan, process, archive, single, init-config]
+error: unrecognized subcommand 'invalid_mode'
+
+Usage: arkivisto [OPTIONS] <COMMAND>
 
 For more information, try '--help'.

@@ -1,6 +1,35 @@
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    sync::LazyLock,
+};
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
+use regex::Regex;
+
+/// Regex matching scan directory names in the timestamp format `YYYYMMDD-HHMMSS`.
+static TIMESTAMP_DIR_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\d{8}-\d{6}$").expect("Invalid regex pattern"));
+
+/// Whether a directory name matches the scan timestamp format `YYYYMMDD-HHMMSS`.
+pub fn is_timestamp_dir_name(name: &str) -> bool {
+    TIMESTAMP_DIR_RE.is_match(name)
+}
+
+/// Resolve a single scan directory by its timestamp name within `scans_dir`.
+///
+/// Validates that the timestamp matches the expected format and that the
+/// directory exists, returning a clear error otherwise.
+pub fn resolve_timestamp_dir(scans_dir: &Path, timestamp: &str) -> Result<PathBuf> {
+    if !is_timestamp_dir_name(timestamp) {
+        bail!(
+            "Invalid timestamp '{timestamp}'. Expected format: YYYYMMDD-HHMMSS (e.g. 20260602-205254)"
+        );
+    }
+    let dir = scans_dir.join(timestamp);
+    ensure!(dir.is_dir(), "Directory not found: {}", dir.display());
+    Ok(dir)
+}
 
 /// Ensure that a directory exists and is empty
 ///

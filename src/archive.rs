@@ -802,12 +802,24 @@ pub fn create_preview(pdf_path: &Path, scans_dir: &Path) -> Result<PathBuf> {
     Ok(preview_path)
 }
 
+/// Whether a directory is ready for archiving.
+///
+/// A directory is ready for archiving if its name matches the timestamp format
+/// and it contains both `_processed.pdf` and `_processed.txt`.
+pub fn is_archivable_document_dir(path: &Path) -> bool {
+    path.is_dir()
+        && path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(crate::fs_utils::is_timestamp_dir_name)
+        && path.join(filenames::PROCESSED_PDF).is_file()
+        && path.join(filenames::PROCESSED_TXT).is_file()
+}
+
 /// Find all document directories that are ready for archiving.
 ///
 /// A directory is ready for archiving if it contains both `_processed.pdf` and `_processed.txt`.
 pub fn find_archivable_document_dirs(scans_dir: &Path) -> Result<Vec<PathBuf>> {
-    let date_time_regex = Regex::new(r"^\d{8}-\d{6}$").expect("Invalid regex pattern");
-
     debug!("Searching {} for archivable documents", scans_dir.display());
     let entries = fs::read_dir(scans_dir)
         .with_context(|| format!("Failed to read scans directory: {}", scans_dir.display()))?;
@@ -815,17 +827,7 @@ pub fn find_archivable_document_dirs(scans_dir: &Path) -> Result<Vec<PathBuf>> {
     let mut dirs: Vec<PathBuf> = entries
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
-        .filter(|path| path.is_dir())
-        .filter(|path| {
-            path.file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|name| date_time_regex.is_match(name))
-        })
-        .filter(|path| {
-            // Must have both _final.pdf and _final.txt
-            path.join(filenames::PROCESSED_PDF).is_file()
-                && path.join(filenames::PROCESSED_TXT).is_file()
-        })
+        .filter(|path| is_archivable_document_dir(path))
         .collect();
 
     dirs.sort();

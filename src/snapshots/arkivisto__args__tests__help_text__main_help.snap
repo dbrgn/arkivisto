@@ -2,11 +2,21 @@
 source: src/args.rs
 expression: help
 ---
-Usage: arkivisto [OPTIONS] <MODE>
+Usage: arkivisto [OPTIONS] <COMMAND>
 
-Arguments:
-  <MODE>
-          Processing mode [possible values: scan, process, archive, single, init-config]
+Commands:
+  scan
+          Scan documents in a loop
+  process
+          Process scanned documents (post-process TIFFs and run OCR)
+  archive
+          Archive processed documents
+  single
+          Scan, process and archive a single document
+  init-config
+          Initialize the configuration file
+  help
+          Print this message or the help of the given subcommand(s)
 
 Options:
   -l, --log-level <LOG_LEVEL>

@@ -1,4 +1,4 @@
-use clap::{Parser, ValueEnum};
+use clap::{Parser, Subcommand, ValueEnum};
 use tracing_subscriber::filter::LevelFilter;
 
 #[derive(Debug, Clone, ValueEnum, Default)]
@@ -37,13 +37,26 @@ impl std::fmt::Display for LogLevel {
     }
 }
 
-#[derive(Debug, Clone, ValueEnum)]
+#[derive(Debug, Clone, Subcommand)]
 #[cfg_attr(test, derive(serde::Serialize))]
 pub enum Mode {
+    /// Scan documents in a loop
     Scan,
-    Process,
-    Archive,
+    /// Process scanned documents (post-process TIFFs and run OCR)
+    Process {
+        /// Optional timestamp of a single directory to process (format: YYYYMMDD-HHMMSS)
+        #[arg(value_name = "TIMESTAMP")]
+        timestamp: Option<String>,
+    },
+    /// Archive processed documents
+    Archive {
+        /// Optional timestamp of a single directory to archive (format: YYYYMMDD-HHMMSS)
+        #[arg(value_name = "TIMESTAMP")]
+        timestamp: Option<String>,
+    },
+    /// Scan, process and archive a single document
     Single,
+    /// Initialize the configuration file
     InitConfig,
 }
 
@@ -53,16 +66,16 @@ pub enum Mode {
 #[command(next_line_help = true)]
 pub struct Args {
     /// Processing mode
-    #[arg(value_enum)]
+    #[command(subcommand)]
     pub mode: Mode,
 
     /// Log level
-    #[arg(short, long, value_enum, default_value_t = LogLevel::default())]
+    #[arg(short, long, value_enum, default_value_t = LogLevel::default(), global = true)]
     pub log_level: LogLevel,
 
     /// Dev mode: Don't actually scan, but use simulated scan TIFFs
     #[cfg_attr(not(debug_assertions), arg(skip))]
-    #[cfg_attr(debug_assertions, arg(long))]
+    #[cfg_attr(debug_assertions, arg(long, global = true))]
     pub fake_scan: bool,
 }
 
@@ -100,19 +113,43 @@ mod tests {
         #[test]
         fn process_mode() {
             let args = Args::parse_from(["arkivisto", "process"]);
-            assert!(matches!(args.mode, Mode::Process));
+            assert!(matches!(args.mode, Mode::Process { timestamp: None }));
+        }
+
+        #[test]
+        fn process_mode_with_timestamp() {
+            let args = Args::parse_from(["arkivisto", "process", "20260602-205254"]);
+            assert!(matches!(
+                args.mode,
+                Mode::Process { timestamp: Some(ts) } if ts == "20260602-205254"
+            ));
         }
 
         #[test]
         fn archive_mode() {
             let args = Args::parse_from(["arkivisto", "archive"]);
-            assert!(matches!(args.mode, Mode::Archive));
+            assert!(matches!(args.mode, Mode::Archive { timestamp: None }));
+        }
+
+        #[test]
+        fn archive_mode_with_timestamp() {
+            let args = Args::parse_from(["arkivisto", "archive", "20260602-205254"]);
+            assert!(matches!(
+                args.mode,
+                Mode::Archive { timestamp: Some(ts) } if ts == "20260602-205254"
+            ));
         }
 
         #[test]
         fn single_mode() {
             let args = Args::parse_from(["arkivisto", "single"]);
             assert!(matches!(args.mode, Mode::Single));
+        }
+
+        #[test]
+        fn single_mode_rejects_timestamp() {
+            let result = Args::try_parse_from(["arkivisto", "single", "20260602-205254"]);
+            assert!(result.is_err());
         }
 
         #[rstest]

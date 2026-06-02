@@ -7,15 +7,13 @@ use std::{
 use anyhow::{Context, Result, anyhow};
 use indicatif::{ProgressBar, ProgressFinish, ProgressStyle};
 use nix::unistd::{Gid, Uid};
-use regex::Regex;
 use tracing::{debug, trace, warn};
 
 use crate::{
     common::{self, CheckDependencyResult, filenames},
     config::Config,
+    fs_utils,
 };
-
-static DATE_TIME_REGEX: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
 
 /// OCRmyPDF Docker image and version
 static OCRMYPDF_IMAGE: &str = "docker.io/jbarlow83/ocrmypdf:v16.13.0";
@@ -89,6 +87,14 @@ pub fn prepare_dependencies() -> Result<()> {
     Ok(())
 }
 
+/// Whether a directory has already been processed.
+///
+/// A directory is considered processed if it contains a processed PDF or OCR
+/// text sidecar file.
+pub fn is_processed_document_dir(path: &Path) -> bool {
+    path.join(filenames::PROCESSED_PDF).is_file() || path.join(filenames::PROCESSED_TXT).is_file()
+}
+
 /// Return iterator over unprocessed document directories.
 ///
 /// Parameters:
@@ -96,9 +102,6 @@ pub fn prepare_dependencies() -> Result<()> {
 ///     The parent directory to search for unprocessed document directories.
 pub fn find_unprocessed_document_dirs(scans_dir: &std::path::Path) -> Result<Vec<PathBuf>> {
     debug!("Finding unprocessed document directories in {scans_dir:?}");
-
-    let date_time_regex = DATE_TIME_REGEX
-        .get_or_init(|| Regex::new(r"^\d{8}-\d{6}$").expect("Invalid regex pattern"));
 
     let entries = fs::read_dir(scans_dir)
         .with_context(|| format!("Failed to read scans directory: {}", scans_dir.display()))?;
@@ -111,16 +114,13 @@ pub fn find_unprocessed_document_dirs(scans_dir: &std::path::Path) -> Result<Vec
         // Keep only directories
         .filter(|path| path.is_dir())
         // Keep only directories with names matching the date-time format
-        .filter(move |path| {
+        .filter(|path| {
             path.file_name()
                 .and_then(|n| n.to_str())
-                .is_some_and(|name| date_time_regex.is_match(name))
+                .is_some_and(fs_utils::is_timestamp_dir_name)
         })
         // Filter out directories that already have processed files
-        .filter(|path| {
-            !path.join(filenames::PROCESSED_PDF).is_file()
-                && !path.join(filenames::PROCESSED_TXT).is_file()
-        })
+        .filter(|path| !is_processed_document_dir(path))
         .collect();
 
     dirs.sort();

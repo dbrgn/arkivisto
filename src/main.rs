@@ -4,7 +4,10 @@ use clap::Parser;
 use tracing::{debug, level_filters::LevelFilter, trace};
 use tracing_subscriber::{filter::Targets, prelude::*};
 
-use crate::{args::Mode, common::CheckDependencyResult};
+use crate::{
+    args::Mode,
+    common::{CheckDependencyResult, filenames},
+};
 
 mod archive;
 mod args;
@@ -42,7 +45,7 @@ fn main() -> Result<()> {
 
     // Check dependencies on external commands
     let mut check_dependency_result = CheckDependencyResult::AllAvailable;
-    if matches!(args.mode, Mode::Single | Mode::Process) {
+    if matches!(args.mode, Mode::Single | Mode::Process { .. }) {
         check_dependency_result.merge(process::check_dependencies());
     }
     if matches!(args.mode, Mode::Single | Mode::Scan | Mode::InitConfig) {
@@ -97,7 +100,7 @@ fn main() -> Result<()> {
     };
 
     // Prepare dependencies
-    if matches!(args.mode, Mode::Single | Mode::Process) {
+    if matches!(args.mode, Mode::Single | Mode::Process { .. }) {
         process::prepare_dependencies()?;
     }
 
@@ -123,10 +126,19 @@ fn main() -> Result<()> {
                 println!("Scanned document to {}", document_dir.display());
             }
         }
-        Mode::Process => {
-            // Process any unprocessed documents
+        Mode::Process { timestamp } => {
+            // Process either a single directory (by timestamp) or any unprocessed documents
             // TODO: Do things in parallel. The `multiprogress` struct has support for this. Maybe use rayon?
-            let document_dirs = process::find_unprocessed_document_dirs(&scans_dir)?;
+            let document_dirs = match timestamp {
+                Some(ts) => {
+                    let dir = fs_utils::resolve_timestamp_dir(&scans_dir, &ts)?;
+                    if process::is_processed_document_dir(&dir) {
+                        anyhow::bail!("Directory {} is already processed", dir.display());
+                    }
+                    vec![dir]
+                }
+                None => process::find_unprocessed_document_dirs(&scans_dir)?,
+            };
             if document_dirs.is_empty() {
                 println!("No unprocessed documents found.");
             } else {
@@ -140,9 +152,23 @@ fn main() -> Result<()> {
                 }
             }
         }
-        Mode::Archive => {
-            // Archive any processed documents
-            let document_dirs = archive::find_archivable_document_dirs(&scans_dir)?;
+        Mode::Archive { timestamp } => {
+            // Archive either a single directory (by timestamp) or any processed documents
+            let document_dirs = match timestamp {
+                Some(ts) => {
+                    let dir = fs_utils::resolve_timestamp_dir(&scans_dir, &ts)?;
+                    if !archive::is_archivable_document_dir(&dir) {
+                        anyhow::bail!(
+                            "Directory {} is not ready for archiving (missing {} or {})",
+                            dir.display(),
+                            filenames::PROCESSED_PDF,
+                            filenames::PROCESSED_TXT,
+                        );
+                    }
+                    vec![dir]
+                }
+                None => archive::find_archivable_document_dirs(&scans_dir)?,
+            };
             if document_dirs.is_empty() {
                 println!("No documents ready for archiving.");
             } else {
