@@ -170,11 +170,11 @@ pub fn run_init_config() -> Result<()> {
         let path_str = inquire::Text::new("Output directory path:").prompt()?;
         let path = PathBuf::from(&path_str);
         if !path.exists() {
-            println!("Path {:?} does not exist.", &path);
+            println!("Path {:?} does not exist.", path);
             continue;
         }
         if !path.is_dir() {
-            println!("Path {:?} is not a directory.", &path);
+            println!("Path {:?} is not a directory.", path);
             continue;
         }
         output_directory = Some(path);
@@ -224,13 +224,13 @@ pub fn run_init_config() -> Result<()> {
 
     // Print
     println!("Writing config to {:?}:", config_path);
-    println!("  Output directory: {:?}", &config.output_directory);
+    println!("  Output directory: {:?}", config.output_directory);
     println!("  Scanners:");
     for scanner in &config.scanners {
         println!("  - {}", scanner.name);
     }
-    println!("  OCR languages: {:?}", &config.tools.ocrmypdf.language);
-    println!("  PDF viewer: {:?}", &config.tools.pdf_viewer);
+    println!("  OCR languages: {:?}", config.tools.ocrmypdf.language);
+    println!("  PDF viewer: {:?}", config.tools.pdf_viewer);
 
     // Save
     config.save(None)?;
