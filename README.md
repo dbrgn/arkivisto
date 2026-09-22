@@ -23,8 +23,6 @@ Current implementation status:
 You need the following binaries on your system:
 
 - `scanimage` (part of SANE)
-- `magick` (part of Imagemagick)
-- `tiffcp` (part of libtiff)
 - `docker` (part of Docker or Podman)
 
 ## Regular Expressions
