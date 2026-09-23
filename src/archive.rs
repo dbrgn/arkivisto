@@ -906,12 +906,10 @@ pub fn archive_document(
 
     // Open preview
     if offer_preview_open {
-        let open_preview = inquire::Confirm::new(&format!(
-            "Open preview with '{}'?",
-            &config.tools.pdf_viewer,
-        ))
-        .with_default(true)
-        .prompt()?;
+        let open_preview =
+            inquire::Confirm::new(&format!("Open preview with '{}'?", config.tools.pdf_viewer,))
+                .with_default(true)
+                .prompt()?;
         if open_preview {
             let spawned = Command::new(&config.tools.pdf_viewer)
                 .arg(&preview_path)
