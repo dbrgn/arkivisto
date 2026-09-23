@@ -93,8 +93,6 @@ impl ScanMode {
 fn run_scanimage(current_scan_dir: &Path, context: &ScanContext, mode: &ScanMode) -> Result<()> {
     debug!("Scanning to {}", current_scan_dir.display());
 
-    // TODO: Manual duplex
-
     // Macro to reduce repetition in source checking
     macro_rules! get_source {
         ($field:ident, $desc:expr) => {
@@ -118,15 +116,44 @@ fn run_scanimage(current_scan_dir: &Path, context: &ScanContext, mode: &ScanMode
 
     // Call scanimage
     match mode {
-        ScanMode::AdfSingleSided { dpi }
-        | ScanMode::AdfDuplex { dpi }
-        | ScanMode::AdfManualDuplex { dpi } => {
+        ScanMode::AdfSingleSided { dpi } | ScanMode::AdfDuplex { dpi } => {
             // Scan all available pages from ADF
             _scanimage(
                 current_scan_dir,
                 context,
                 source,
                 0,
+                None,
+                None,
+                dpi.unwrap_or(DEFAULT_RESOLUTION_NORMAL),
+            )?;
+        }
+        ScanMode::AdfManualDuplex { dpi } => {
+            // Scan all available odd pages from ADF
+            _scanimage(
+                current_scan_dir,
+                context,
+                source,
+                0,
+                Some(2),
+                None,
+                dpi.unwrap_or(DEFAULT_RESOLUTION_NORMAL),
+            )?;
+            // Wait for even pages being ready
+            let scan_even_pages = inquire::Confirm::new("Ready to scan the even pages?")
+                .with_default(true)
+                .with_help_message("Press enter to scan, or type 'n' to abort the scan process.")
+                .prompt()?;
+            if !scan_even_pages {
+                return Err(anyhow!("Scan aborted by user"));
+            }
+            // Scan all available even pages from ADF
+            _scanimage(
+                current_scan_dir,
+                context,
+                source,
+                1,
+                Some(2),
                 None,
                 dpi.unwrap_or(DEFAULT_RESOLUTION_NORMAL),
             )?;
@@ -154,6 +181,7 @@ fn run_scanimage(current_scan_dir: &Path, context: &ScanContext, mode: &ScanMode
                     source,
                     i,
                     Some(1),
+                    None,
                     dpi.unwrap_or(DEFAULT_RESOLUTION_NORMAL),
                 )?;
             }
@@ -176,6 +204,10 @@ fn run_scanimage(current_scan_dir: &Path, context: &ScanContext, mode: &ScanMode
 ///     The batch offset. If this is set to 0, the filename of the first
 ///     scanned page will be `1000.tif`. If it's set to 4, the filename
 ///     of the first scanned page will be `1004.tif`.
+///   increment:
+///     If set, file name numbers will increment by this number for every page
+///     scanned. This is useful for scanning double-sided documents with a
+///     single-side ADF.
 ///   count:
 ///     The number of pages to scan. If this is `None`, no count will be passed
 ///     to `scanimage` (i.e. all available pages will be scanned).
@@ -186,6 +218,7 @@ fn _scanimage(
     context: &ScanContext,
     source: &str,
     start: usize,
+    increment: Option<usize>,
     count: Option<usize>,
     resolution_dpi: u16,
 ) -> Result<()> {
@@ -200,6 +233,9 @@ fn _scanimage(
     args.push(format!("--batch-start={}", 1000 + start));
     if let Some(batch_count) = count {
         args.push(format!("--batch-count={}", batch_count));
+    }
+    if let Some(batch_increment) = increment {
+        args.push(format!("--batch-increment={}", batch_increment));
     }
 
     // Common scanner-specific parameters for which we assume support by all scanners
