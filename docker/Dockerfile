@@ -12,6 +12,7 @@ RUN apk --no-cache update \
     jbig2dec \
     jbig2enc \
     pngquant \
+    python3 \
     tesseract-ocr \
     tesseract-ocr-data-chi_sim \
     tesseract-ocr-data-deu \
@@ -25,12 +26,16 @@ RUN apk --no-cache update \
     unpaper \
     uv
 
-# Make UV installs available for non-root users
-ENV UV_TOOL_DIR=/usr/local/share/uv/tools \
-    UV_TOOL_BIN_DIR=/usr/local/bin
+# Put the venv somewhere the non-root user can read
+ENV UV_PROJECT_ENVIRONMENT=/opt/ocrmypdf-venv \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_LINK_MODE=copy
 
-# Install OCRmyPDF from sources to get an up-to-date version
+# Install OCRmyPDF from sources to get an up-to-date version (this will use
+# the lockfile from the source repo, in contrast to the release on pypi)
 ARG OCRMYPDF_VERSION=v17.12.1
 RUN git clone -b $OCRMYPDF_VERSION --depth 1 https://github.com/ocrmypdf/OCRmyPDF.git /tmp/ocrmypdf \
-  && uv tool install /tmp/ocrmypdf \
+  && cd /tmp/ocrmypdf \
+  && uv sync --frozen --no-dev --no-editable \
+  && ln -s /opt/ocrmypdf-venv/bin/ocrmypdf /usr/local/bin/ocrmypdf \
   && rm -rf /tmp/ocrmypdf
