@@ -109,6 +109,14 @@ pub fn prepare_dependencies() -> Result<()> {
 }
 
 fn run_in_docker(directory: &Path, cmd: &str, args: &[&OsStr]) -> Result<()> {
+    // Sanity check that the directory exists and is passed as an absolute
+    // path. Both should be true, but let's verify it since Docker would behave
+    // badly otherwise (e.g. it would create the directory owned by root).
+    assert!(
+        directory.is_absolute() && directory.exists(),
+        "Unexpected directory '{}' passed, this indicates an internal logic bug",
+        directory.display()
+    );
     let output = Command::new(commands::DOCKER.bin)
         .arg("run")
         .arg("--rm")
@@ -118,6 +126,9 @@ fn run_in_docker(directory: &Path, cmd: &str, args: &[&OsStr]) -> Result<()> {
         // Mount directory to the same path, so paths don't need to be translated
         .arg("-v")
         .arg(format!("{0}:{0}", directory.display()))
+        // Hardening: Container doesn't need internet access
+        .arg("--network")
+        .arg("none")
         .arg(docker_image())
         .arg(cmd)
         .args(args)
