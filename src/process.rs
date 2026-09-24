@@ -8,7 +8,7 @@ use std::{
     sync::OnceLock,
 };
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, ensure};
 use indicatif::{ProgressBar, ProgressFinish, ProgressStyle};
 use nix::unistd::{Gid, Uid};
 use sha2::{Digest, Sha256};
@@ -112,7 +112,7 @@ fn run_in_docker(directory: &Path, cmd: &str, args: &[&OsStr]) -> Result<()> {
     // Sanity check that the directory exists and is passed as an absolute
     // path. Both should be true, but let's verify it since Docker would behave
     // badly otherwise (e.g. it would create the directory owned by root).
-    assert!(
+    ensure!(
         directory.is_absolute() && directory.exists(),
         "Unexpected directory '{}' passed, this indicates an internal logic bug",
         directory.display()
