@@ -23,9 +23,11 @@ Current implementation status:
 You need the following binaries on your system:
 
 - `scanimage` (part of SANE)
-- `magick` (part of Imagemagick)
-- `tiffcp` (part of libtiff)
 - `docker` (part of Docker or Podman)
+
+> [!NOTE]
+> On first run, Arkivisto builds a local Docker image named `arkivisto-deps`
+> containing the dependencies OCRmyPDF, Tesseract, ImageMagick and libtiff.
 
 ## Regular Expressions
 

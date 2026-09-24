@@ -1,12 +1,17 @@
 use std::{
+    ffi::OsStr,
     fs,
+    io::Write,
     path::{Path, PathBuf},
     process::Command,
+    process::Stdio,
+    sync::OnceLock,
 };
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, ensure};
 use indicatif::{ProgressBar, ProgressFinish, ProgressStyle};
 use nix::unistd::{Gid, Uid};
+use sha2::{Digest, Sha256};
 use tracing::{debug, trace, warn};
 
 use crate::{
@@ -15,75 +20,130 @@ use crate::{
     fs_utils,
 };
 
-/// OCRmyPDF Docker image and version
-static OCRMYPDF_IMAGE: &str = "docker.io/jbarlow83/ocrmypdf:v16.13.0";
+/// Docker image name (without tag)
+static DOCKER_IMAGE_NAME: &str = "arkivisto-deps";
 
-/// Get the current user's UID and GID for use with Docker --user flag.
-///
-/// This ensures that files created by Docker containers are owned by the current user
-/// rather than root.
-fn get_current_uid_gid() -> (u32, u32) {
-    (Uid::current().as_raw(), Gid::current().as_raw())
-}
+/// Bundled Dockerfile for building at runtime
+const DOCKERFILE: &[u8] = include_bytes!("../docker/Dockerfile");
 
 /// Commands used to process files
 mod commands {
     use crate::common::Dependency;
 
-    pub const MAGICK: Dependency = Dependency {
-        bin: "magick",
-        name: "Imagemagick",
-    };
-    pub const TIFFCP: Dependency = Dependency {
-        bin: "tiffcp",
-        name: "libtiff",
-    };
     pub const DOCKER: Dependency = Dependency {
         bin: "docker",
         name: "Docker",
     };
 }
 
+/// Full Docker image name including tag, derived from a hash of the Dockerfile.
+///
+/// This ensures that whenever the Dockerfile contents change (e.g. in a new
+/// release), a new tag is used, so `prepare_dependencies` correctly detects
+/// that a rebuild is needed instead of reusing a stale image under the same
+/// tag.
+fn docker_image() -> &'static str {
+    static TAG: OnceLock<String> = OnceLock::new();
+    TAG.get_or_init(|| {
+        let hash = Sha256::digest(DOCKERFILE);
+        let short_hash: String = hash.iter().take(8).map(|b| format!("{b:02x}")).collect();
+        format!("{DOCKER_IMAGE_NAME}:{short_hash}")
+    })
+}
+
+/// Check if a Docker image exists
+fn image_exists(name: &str) -> Result<bool> {
+    let status = Command::new(commands::DOCKER.bin)
+        .arg("image")
+        .arg("inspect")
+        .arg(name)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()?;
+    Ok(status.success())
+}
+
 pub fn check_dependencies() -> CheckDependencyResult {
-    common::check_dependencies(&[commands::MAGICK, commands::TIFFCP, commands::DOCKER])
+    common::check_dependencies(&[commands::DOCKER])
 }
 
 /// Prepare dependencies by ensuring the required Docker image is available.
-///
-/// This function checks if the OCRmyPDF Docker image exists locally and pulls
-/// it if necessary.
 pub fn prepare_dependencies() -> Result<()> {
-    // Check if Docker image exists locally
-    trace!("Checking for Docker image {OCRMYPDF_IMAGE}");
-    let output = Command::new(commands::DOCKER.bin)
-        .arg("image")
-        .arg("inspect")
-        .arg(OCRMYPDF_IMAGE)
-        .output()
-        .context("Failed to run `docker image inspect` command")?;
-    if output.status.success() {
-        debug!("Docker image {OCRMYPDF_IMAGE} already exists locally");
+    let image = docker_image();
+
+    if image_exists(image)? {
+        debug!("Docker image {image} already exists, skipping build");
         return Ok(());
     }
 
-    // Image doesn't exist, pull it
-    println!("Fetching Docker image {OCRMYPDF_IMAGE}");
-    let output = Command::new(commands::DOCKER.bin)
-        .arg("pull")
-        .arg(OCRMYPDF_IMAGE)
-        .output()
-        .context("Failed to run `docker pull` command")?;
+    println!("Building Docker image {image}, this may take a moment...");
+    let mut child = Command::new(commands::DOCKER.bin)
+        .arg("build")
+        .arg("-t")
+        .arg(image)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()?;
+
+    child
+        .stdin
+        .take()
+        .context("Failed to open `docker build` stdin")?
+        .write_all(DOCKERFILE)?;
+
+    let output = child.wait_with_output()?;
 
     if !output.status.success() {
         warn!(
-            "docker pull failed with status {}. Stderr: {}",
+            "docker build failed with status {}. Stderr: {}",
             output.status.code().unwrap_or(-1),
             String::from_utf8_lossy(&output.stderr),
         );
-        return Err(anyhow!("Failed to pull Docker image {OCRMYPDF_IMAGE}"));
+        return Err(anyhow!("Failed to build Docker image {image}"));
     }
 
-    debug!("Successfully pulled Docker image {OCRMYPDF_IMAGE}");
+    debug!("Successfully built Docker image {image}");
+    Ok(())
+}
+
+fn run_in_docker(directory: &Path, cmd: &str, args: &[&OsStr]) -> Result<()> {
+    // Sanity check that the directory exists and is passed as an absolute
+    // path. Both should be true, but let's verify it since Docker would behave
+    // badly otherwise (e.g. it would create the directory owned by root).
+    ensure!(
+        directory.is_absolute() && directory.exists(),
+        "Unexpected directory '{}' passed, this indicates an internal logic bug",
+        directory.display()
+    );
+    let output = Command::new(commands::DOCKER.bin)
+        .arg("run")
+        .arg("--rm")
+        // Use current UID/GID to ensure output files are owned by the current user
+        .arg("--user")
+        .arg(format!("{}:{}", Uid::current(), Gid::current()))
+        // Mount directory to the same path, so paths don't need to be translated
+        .arg("-v")
+        .arg(format!("{0}:{0}", directory.display()))
+        // Hardening: Container doesn't need internet access
+        .arg("--network")
+        .arg("none")
+        .arg(docker_image())
+        .arg(cmd)
+        .args(args)
+        .output()?;
+
+    if !output.status.success() {
+        warn!(
+            "{} failed with status {}. Stderr: {}",
+            &cmd,
+            output.status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&output.stderr),
+        );
+        return Err(anyhow!("Failed to run `{}` in docker", cmd));
+    }
+
     Ok(())
 }
 
@@ -220,104 +280,65 @@ pub fn process_document(
 
         // TODO: Tweak parameters
         // TODO: Compress with LZW or something else?
-        let output = Command::new(commands::MAGICK.bin)
-            .arg(tif_in.as_os_str())
-            .arg("-auto-level")
-            .arg("-level")
-            .arg("10%,90%")
-            .arg(tif_out.as_os_str())
-            .output()?;
-        if !output.status.success() {
-            warn!(
-                "magick failed with status {}. Stderr: {}",
-                output.status.code().unwrap_or(-1),
-                String::from_utf8_lossy(&output.stderr),
-            );
-            return Err(anyhow!("Failed to run `magick` command"));
-        }
+        run_in_docker(
+            directory,
+            "magick",
+            &[
+                tif_in.as_ref(),
+                "-auto-level".as_ref(),
+                "-level".as_ref(),
+                "10%,90%".as_ref(),
+                tif_out.as_ref(),
+            ],
+        )?;
         tifs_step1.push(tif_out);
     }
     progress.inc(1);
 
     // Combine TIFs
     progress.set_message("Combining TIFs");
-    let tif_combined = directory.join(filenames::COMBINED_TIF);
-    let output = Command::new(commands::TIFFCP.bin)
-        .arg("-c")
-        .arg("lzw")
-        .args(&tifs_step1)
-        .arg(tif_combined.as_os_str())
-        .output()?;
-    if !output.status.success() {
-        warn!(
-            "tiffcp failed with status {}. Stderr: {}",
-            output.status.code().unwrap_or(-1),
-            String::from_utf8_lossy(&output.stderr),
-        );
-        return Err(anyhow!("Failed to run `tiffcp` command"));
+    let mut args: Vec<&OsStr> = vec!["-c".as_ref(), "lzw".as_ref()];
+    for tif_out in &tifs_step1 {
+        args.push(tif_out.as_ref());
     }
+    let tif_combined = directory.join(filenames::COMBINED_TIF);
+    args.push(tif_combined.as_ref());
+    run_in_docker(directory, "tiffcp", &args)?;
     progress.inc(1);
 
     // Convert TIF to PDF
     progress.set_message("Converting to PDF");
     let pdf_out = directory.join(filenames::COMBINED_PDF);
-    let output = Command::new(commands::MAGICK.bin)
-        .arg(tif_combined.as_os_str())
-        .arg("-compress")
-        .arg("JPEG")
-        .arg(pdf_out.as_os_str())
-        .output()?;
-    if !output.status.success() {
-        warn!(
-            "magick failed with status {}. Stderr: {}",
-            output.status.code().unwrap_or(-1),
-            String::from_utf8_lossy(&output.stderr),
-        );
-        return Err(anyhow!("Failed to run `magick` command"));
-    }
+    run_in_docker(
+        directory,
+        "magick",
+        &[
+            tif_combined.as_ref(),
+            "-compress".as_ref(),
+            "JPEG".as_ref(),
+            pdf_out.as_ref(),
+        ],
+    )?;
     progress.inc(1);
 
     // Run OCR and other postprocessing
     progress.set_message("Running OCR and generating PDF/A");
 
-    // Get current UID/GID to ensure output files are owned by the current user
-    let (uid, gid) = get_current_uid_gid();
-
     trace!("OCRmyPDF config: {:?}", &config.tools.ocrmypdf);
-    let output = Command::new(commands::DOCKER.bin)
-        .arg("run")
-        .arg("--rm")
-        .arg("--user")
-        .arg(format!("{}:{}", uid, gid))
-        .arg("-v")
-        .arg(format!(
-            "{}:/document",
-            directory
-                .to_str()
-                .context("Failed to convert directory path to string")?
-        ))
-        .arg(OCRMYPDF_IMAGE)
-        .arg("--language")
-        .arg(&config.tools.ocrmypdf.language)
-        .arg("--sidecar")
-        .arg(Path::new("/document/").join(filenames::PROCESSED_TXT))
-        .arg(
-            Path::new("/document/").join(
-                pdf_out
-                    .file_name()
-                    .context("Failed to get output PDF file name")?,
-            ),
-        )
-        .arg(Path::new("/document/").join(filenames::PROCESSED_PDF))
-        .output()?;
-    if !output.status.success() {
-        warn!(
-            "ocrmypdf failed with status {}. Stderr: {}",
-            output.status.code().unwrap_or(-1),
-            String::from_utf8_lossy(&output.stderr),
-        );
-        return Err(anyhow!("Failed to run `ocrmypdf` command (through Docker)"));
-    }
+    let processed_txt = directory.join(filenames::PROCESSED_TXT);
+    let processed_pdf = directory.join(filenames::PROCESSED_PDF);
+    run_in_docker(
+        directory,
+        "ocrmypdf",
+        &[
+            "--language".as_ref(),
+            config.tools.ocrmypdf.language.as_ref(),
+            "--sidecar".as_ref(),
+            processed_txt.as_ref(),
+            pdf_out.as_ref(),
+            processed_pdf.as_ref(),
+        ],
+    )?;
     progress.inc(1);
 
     progress.set_message("Processing complete");

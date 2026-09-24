@@ -146,6 +146,7 @@ dependencies = [
  "rstest",
  "serde",
  "serde-saphyr",
+ "sha2",
  "tempfile",
  "tracing",
  "tracing-subscriber",
