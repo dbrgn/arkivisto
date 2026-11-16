@@ -8,17 +8,17 @@ tools:
     language: eng
   pdf_viewer: xdg-open
 scanners:
-  - name: Test Scanner
-    device_name: test:scanner:device
-    source_flatbed: Flatbed
+- name: Test Scanner
+  device_name: test:scanner:device
+  source_flatbed: Flatbed
 authors:
-  - name: Musterfirma
+- name: Musterfirma
+  include_keywords: []
+  exclude_keywords: []
+  directory: musterfirma
+  pdf_keywords: []
+  document_types:
+  - name: Invoice
     include_keywords: []
     exclude_keywords: []
-    directory: musterfirma
     pdf_keywords: []
-    document_types:
-      - name: Invoice
-        include_keywords: []
-        exclude_keywords: []
-        pdf_keywords: []
