@@ -12,7 +12,7 @@ chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
 indicatif = "0.18"
 inquire = "0.9.5"
-lopdf = { version = "0.38", default-features = false, features = ["chrono"] }
+lopdf = { version = "0.47", default-features = false, features = ["chrono"] }
 nix = { version = "0.30", features = ["user"] }
 regex = "1"
 serde = { version = "1", features = ["derive"] }

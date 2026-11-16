@@ -57,10 +57,7 @@ pub fn set_pdf_metadata(
     };
 
     // Set metadata fields
-    info_dict.set(
-        "Title",
-        Object::String(encode_utf16_be(&metadata.title), StringFormat::Literal),
-    );
+    info_dict.set("Title", utf16_be_string(&metadata.title));
     info_dict.set(
         "Author",
         Object::String("".as_bytes().to_vec(), StringFormat::Literal),
@@ -75,10 +72,7 @@ pub fn set_pdf_metadata(
 
     // Set keywords
     let keywords_str = metadata.keywords.join(", ");
-    info_dict.set(
-        "Keywords",
-        Object::String(encode_utf16_be(&keywords_str), StringFormat::Literal),
-    );
+    info_dict.set("Keywords", utf16_be_string(&keywords_str));
 
     // Update XMP metadata stream if present (required for PDF/A compliance)
     update_xmp_metadata(&mut doc, metadata)?;
@@ -186,6 +180,13 @@ fn update_xmp_metadata(doc: &mut Document, metadata: &PdfMetadata) -> Result<()>
     Ok(())
 }
 
+/// Create a literal PDF string object containing `text` encoded as UTF-16BE (with BOM).
+fn utf16_be_string(text: &str) -> Object {
+    let mut bytes = Vec::new();
+    encode_utf16_be(text, &mut bytes);
+    Object::String(bytes, StringFormat::Literal)
+}
+
 /// Escape special XML characters in a string.
 fn xml_escape(s: &str) -> String {
     s.replace('&', "&amp;")
@@ -198,6 +199,21 @@ fn xml_escape(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod utf16_be_string {
+        use super::*;
+
+        #[test]
+        fn ascii_and_non_ascii() {
+            assert_eq!(
+                super::utf16_be_string("Aä"),
+                Object::String(
+                    vec![0xFE, 0xFF, 0x00, 0x41, 0x00, 0xE4],
+                    StringFormat::Literal
+                )
+            );
+        }
+    }
 
     mod xml_escape {
         #[test]
