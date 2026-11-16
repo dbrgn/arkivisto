@@ -292,7 +292,10 @@ impl Config {
         Self::create_backup(&config_path)?;
 
         // Serialize to YAML
-        let yaml = serde_saphyr::to_string(self).context("Failed to serialize config to YAML")?;
+        // Indent list items below their parent key (serde-saphyr defaults to compact lists)
+        let options = serde_saphyr::ser_options! { compact_list_indent: false };
+        let yaml = serde_saphyr::to_string_with_options(self, options)
+            .context("Failed to serialize config to YAML")?;
 
         // Write to file
         fs::write(&config_path, yaml)
