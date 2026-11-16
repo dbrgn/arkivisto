@@ -10,7 +10,7 @@ anyhow = "1"
 app_dirs = { package = "app_dirs2", version = "2" }
 chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
-indicatif = "0.17"
+indicatif = "0.18"
 inquire = "0.7.5"
 lopdf = { version = "0.38", default-features = false, features = ["chrono"] }
 nix = { version = "0.30", features = ["user"] }
