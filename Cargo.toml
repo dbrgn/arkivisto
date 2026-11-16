@@ -23,5 +23,5 @@ which = "8"
 
 [dev-dependencies]
 insta = { version = "1", features = ["yaml"] }
-rstest = "0.24"
+rstest = "0.28"
 tempfile = "3"
